@@ -1,0 +1,79 @@
+/**
+ * Styles for the UserMessage component.
+ */
+
+.user-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.user-message-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  padding-right: 0.5rem;
+}
+
+.user-message-author {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.user-message-time {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.user-message-content {
+  max-width: 80%;
+  padding: 0.75rem 1rem;
+  background-color: #3b82f6;
+  color: #ffffff;
+  border-radius: 1rem 1rem 0.25rem 1rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.user-message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  max-width: 80%;
+}
+
+.user-attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  background-color: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  color: #93c5fd;
+}
+
+.user-attachment .attachment-icon {
+  font-size: 0.875rem;
+}
+
+.user-attachment .attachment-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.user-attachment .attachment-lines {
+  font-size: 0.75rem;
+  color: #60a5fa;
+  font-family: 'Monaco', 'Consolas', monospace;
+}

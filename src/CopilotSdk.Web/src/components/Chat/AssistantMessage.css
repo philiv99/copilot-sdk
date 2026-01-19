@@ -1,0 +1,108 @@
+/**
+ * Styles for the AssistantMessage component.
+ */
+
+.assistant-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.assistant-message-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  padding-left: 0.5rem;
+}
+
+.assistant-message-author {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #22c55e;
+}
+
+.assistant-message-time {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.assistant-message-content {
+  max-width: 85%;
+  padding: 0.75rem 1rem;
+  background-color: #1f2937;
+  border: 1px solid #374151;
+  color: #e5e7eb;
+  border-radius: 1rem 1rem 1rem 0.25rem;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.assistant-message-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Code block styling */
+.code-block {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 0.375rem;
+  overflow-x: auto;
+}
+
+.code-block code {
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #e5e7eb;
+}
+
+.inline-code {
+  padding: 0.125rem 0.375rem;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 0.25rem;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 0.875em;
+  color: #f472b6;
+}
+
+/* Streaming cursor */
+.streaming-cursor {
+  display: inline-block;
+  color: #60a5fa;
+  animation: cursor-blink 0.7s infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+/* Tool request badges */
+.tool-request-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  max-width: 85%;
+}
+
+.tool-request-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background-color: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-family: 'Monaco', 'Consolas', monospace;
+  color: #fbbf24;
+}

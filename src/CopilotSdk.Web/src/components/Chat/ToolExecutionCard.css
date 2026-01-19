@@ -1,0 +1,122 @@
+/**
+ * Styles for the ToolExecutionCard component.
+ */
+
+.tool-execution-card {
+  border: 1px solid #374151;
+  border-radius: 0.5rem;
+  background-color: rgba(17, 24, 39, 0.5);
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+
+.tool-execution-card.executing {
+  border-color: rgba(234, 179, 8, 0.5);
+  animation: tool-pulse 2s infinite;
+}
+
+.tool-execution-card.error {
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+@keyframes tool-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(234, 179, 8, 0);
+  }
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  background: none;
+  border: none;
+  color: #f3f4f6;
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s;
+}
+
+.tool-header:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.tool-icon {
+  font-size: 1rem;
+}
+
+.tool-name {
+  flex: 1;
+  font-weight: 500;
+  font-family: 'Monaco', 'Consolas', monospace;
+  color: #60a5fa;
+}
+
+.tool-status {
+  font-size: 0.75rem;
+  color: #eab308;
+  font-weight: 500;
+}
+
+.tool-duration {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-family: 'Monaco', 'Consolas', monospace;
+}
+
+.tool-chevron {
+  font-size: 0.75rem;
+  transition: transform 0.2s;
+  opacity: 0.6;
+  color: #9ca3af;
+}
+
+.tool-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.tool-details {
+  border-top: 1px solid #374151;
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.tool-section {
+  padding: 0.75rem;
+}
+
+.tool-section:not(:last-child) {
+  border-bottom: 1px solid #374151;
+}
+
+.tool-section-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.tool-code {
+  margin: 0;
+  padding: 0.75rem;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 0.25rem;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #d1d5db;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-x: auto;
+}
+
+.tool-code.error {
+  color: #f87171;
+}

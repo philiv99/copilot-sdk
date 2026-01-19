@@ -1,0 +1,99 @@
+/**
+ * Styles for the ConnectionStatusIndicator component.
+ */
+
+.connection-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Status Dot */
+.status-dot {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Size Variants */
+.connection-status-indicator.small .status-dot {
+  width: 8px;
+  height: 8px;
+}
+
+.connection-status-indicator.medium .status-dot {
+  width: 10px;
+  height: 10px;
+}
+
+.connection-status-indicator.large .status-dot {
+  width: 12px;
+  height: 12px;
+}
+
+.connection-status-indicator.small .status-label {
+  font-size: 0.75rem;
+}
+
+.connection-status-indicator.medium .status-label {
+  font-size: 0.875rem;
+}
+
+.connection-status-indicator.large .status-label {
+  font-size: 1rem;
+}
+
+/* Status Label */
+.status-label {
+  font-weight: 500;
+}
+
+/* Connected State */
+.connection-status-indicator.connected .status-dot {
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+}
+
+.connection-status-indicator.connected .status-label {
+  color: #10b981;
+}
+
+/* Connecting State */
+.connection-status-indicator.connecting .status-dot {
+  background: #f59e0b;
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+.connection-status-indicator.connecting .status-label {
+  color: #f59e0b;
+}
+
+/* Error State */
+.connection-status-indicator.error .status-dot {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+}
+
+.connection-status-indicator.error .status-label {
+  color: #ef4444;
+}
+
+/* Disconnected State */
+.connection-status-indicator.disconnected .status-dot {
+  background: #6b7280;
+}
+
+.connection-status-indicator.disconnected .status-label {
+  color: #9ca3af;
+}
+
+/* Pulse Animation for Connecting */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.9);
+  }
+}

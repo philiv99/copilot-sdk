@@ -1,0 +1,73 @@
+/**
+ * Styles for the ReasoningCollapsible component.
+ */
+
+.reasoning-collapsible {
+  border: 1px solid #374151;
+  border-radius: 0.5rem;
+  background-color: rgba(17, 24, 39, 0.5);
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+}
+
+.reasoning-collapsible.streaming {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.reasoning-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s;
+}
+
+.reasoning-header:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.reasoning-icon {
+  font-size: 1rem;
+}
+
+.reasoning-title {
+  flex: 1;
+  font-weight: 500;
+}
+
+.reasoning-collapsible.streaming .reasoning-title {
+  color: #60a5fa;
+}
+
+.reasoning-chevron {
+  font-size: 0.75rem;
+  transition: transform 0.2s;
+  opacity: 0.6;
+}
+
+.reasoning-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.reasoning-content {
+  padding: 0.75rem;
+  border-top: 1px solid #374151;
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.reasoning-text {
+  margin: 0;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: #d1d5db;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}

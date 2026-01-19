@@ -1,0 +1,460 @@
+using CopilotSdk.Api.Managers;
+using CopilotSdk.Api.Models.Domain;
+using CopilotSdk.Api.Models.Requests;
+using CopilotSdk.Api.Models.Responses;
+using GitHub.Copilot.SDK;
+using Microsoft.Extensions.AI;
+using DomainSessionConfig = CopilotSdk.Api.Models.Domain.SessionConfig;
+
+namespace CopilotSdk.Api.Services;
+
+/// <summary>
+/// Service implementation for session management operations.
+/// </summary>
+public class SessionService : ISessionService
+{
+    private readonly CopilotClientManager _clientManager;
+    private readonly SessionManager _sessionManager;
+    private readonly IToolExecutionService _toolExecutionService;
+    private readonly ILogger<SessionService> _logger;
+
+    public SessionService(
+        CopilotClientManager clientManager,
+        SessionManager sessionManager,
+        IToolExecutionService toolExecutionService,
+        ILogger<SessionService> logger)
+    {
+        _clientManager = clientManager;
+        _sessionManager = sessionManager;
+        _toolExecutionService = toolExecutionService;
+        _logger = logger;
+    }
+
+    /// <inheritdoc/>
+    public async Task<SessionInfoResponse> CreateSessionAsync(CreateSessionRequest request, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Creating session with model {Model}", request.Model);
+
+        var config = new DomainSessionConfig
+        {
+            SessionId = request.SessionId,
+            Model = request.Model,
+            Streaming = request.Streaming,
+            SystemMessage = request.SystemMessage,
+            AvailableTools = request.AvailableTools,
+            ExcludedTools = request.ExcludedTools,
+            Provider = request.Provider,
+            Tools = request.Tools
+        };
+
+        // Build AIFunction collection from tool definitions
+        ICollection<AIFunction>? tools = null;
+        if (request.Tools != null && request.Tools.Count > 0)
+        {
+            _logger.LogInformation("Building {ToolCount} custom tools for session", request.Tools.Count);
+            tools = _toolExecutionService.BuildAIFunctions(request.Tools);
+        }
+
+        var session = await _clientManager.CreateSessionAsync(config, tools, cancellationToken);
+
+        // Register the session in the SessionManager
+        _sessionManager.RegisterSession(session.SessionId, session, config);
+
+        var metadata = _sessionManager.GetMetadata(session.SessionId);
+
+        return new SessionInfoResponse
+        {
+            SessionId = session.SessionId,
+            Model = config.Model,
+            Streaming = config.Streaming,
+            CreatedAt = metadata?.CreatedAt ?? DateTime.UtcNow,
+            LastActivityAt = metadata?.LastActivityAt,
+            Status = "Active",
+            MessageCount = 0,
+            Summary = metadata?.Summary
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<SessionInfoResponse> ResumeSessionAsync(string sessionId, ResumeSessionRequest? request = null, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Resuming session {SessionId}", sessionId);
+
+        // Build AIFunction collection from tool definitions if provided
+        ICollection<AIFunction>? tools = null;
+        if (request?.Tools != null && request.Tools.Count > 0)
+        {
+            _logger.LogInformation("Building {ToolCount} custom tools for resumed session", request.Tools.Count);
+            tools = _toolExecutionService.BuildAIFunctions(request.Tools);
+        }
+
+        var session = await _clientManager.ResumeSessionAsync(
+            sessionId,
+            request?.Streaming ?? false,
+            request?.Provider,
+            tools,
+            cancellationToken);
+
+        // Update the session in the SessionManager
+        _sessionManager.UpdateResumedSession(session.SessionId, session);
+
+        var metadata = _sessionManager.GetMetadata(session.SessionId);
+
+        return new SessionInfoResponse
+        {
+            SessionId = session.SessionId,
+            Model = metadata?.Config?.Model ?? "unknown",
+            Streaming = request?.Streaming ?? metadata?.Config?.Streaming ?? false,
+            CreatedAt = metadata?.CreatedAt ?? DateTime.UtcNow,
+            LastActivityAt = metadata?.LastActivityAt ?? DateTime.UtcNow,
+            Status = "Active",
+            MessageCount = metadata?.MessageCount ?? 0,
+            Summary = metadata?.Summary
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<SessionListResponse> ListSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Listing all sessions");
+
+        // Get sessions from the SDK
+        var sdkSessions = await _clientManager.ListSessionsAsync(cancellationToken);
+
+        // Sync with local tracking
+        _sessionManager.SyncFromSdkSessionList(sdkSessions);
+
+        // Get all metadata from the session manager
+        var allMetadata = _sessionManager.GetAllMetadata();
+
+        var sessions = allMetadata.Select(meta => new SessionInfoResponse
+        {
+            SessionId = meta.SessionId,
+            Model = meta.Config?.Model ?? "unknown",
+            Streaming = meta.Config?.Streaming ?? false,
+            CreatedAt = meta.CreatedAt ?? DateTime.MinValue,
+            LastActivityAt = meta.LastActivityAt,
+            Status = _sessionManager.SessionExists(meta.SessionId) ? "Active" : "Inactive",
+            MessageCount = meta.MessageCount,
+            Summary = meta.Summary
+        }).ToList();
+
+        return new SessionListResponse
+        {
+            Sessions = sessions,
+            TotalCount = sessions.Count
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<SessionInfoResponse?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting session {SessionId}", sessionId);
+
+        // First check local tracking
+        var metadata = _sessionManager.GetMetadata(sessionId);
+
+        if (metadata == null)
+        {
+            // Try to get from SDK session list
+            var sdkSessions = await _clientManager.ListSessionsAsync(cancellationToken);
+            var sdkSession = sdkSessions.FirstOrDefault(s => s.SessionId == sessionId);
+
+            if (sdkSession == null)
+            {
+                return null;
+            }
+
+            // Found in SDK but not locally tracked
+            return new SessionInfoResponse
+            {
+                SessionId = sdkSession.SessionId,
+                Model = "unknown",
+                Streaming = false,
+                CreatedAt = sdkSession.StartTime,
+                LastActivityAt = sdkSession.ModifiedTime,
+                Status = "Inactive",
+                MessageCount = 0,
+                Summary = sdkSession.Summary
+            };
+        }
+
+        return new SessionInfoResponse
+        {
+            SessionId = metadata.SessionId,
+            Model = metadata.Config?.Model ?? "unknown",
+            Streaming = metadata.Config?.Streaming ?? false,
+            CreatedAt = metadata.CreatedAt ?? DateTime.MinValue,
+            LastActivityAt = metadata.LastActivityAt,
+            Status = _sessionManager.SessionExists(sessionId) ? "Active" : "Inactive",
+            MessageCount = metadata.MessageCount,
+            Summary = metadata.Summary
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> DeleteSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Deleting session {SessionId}", sessionId);
+
+        try
+        {
+            // Delete from SDK
+            await _clientManager.DeleteSessionAsync(sessionId, cancellationToken);
+
+            // Remove from local tracking
+            _sessionManager.RemoveSession(sessionId);
+
+            return true;
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Failed to delete"))
+        {
+            _logger.LogWarning("Session {SessionId} not found in SDK: {Message}", sessionId, ex.Message);
+
+            // Still try to remove from local tracking
+            return _sessionManager.RemoveSession(sessionId);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<SendMessageResponse> SendMessageAsync(string sessionId, SendMessageRequest request, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Sending message to session {SessionId}", sessionId);
+
+        var session = _sessionManager.GetSession(sessionId);
+        if (session == null)
+        {
+            _logger.LogWarning("Session {SessionId} not found for sending message", sessionId);
+            return new SendMessageResponse
+            {
+                SessionId = sessionId,
+                Success = false,
+                Error = $"Session '{sessionId}' not found or not active"
+            };
+        }
+
+        try
+        {
+            // Convert attachments to SDK format
+            List<UserMessageDataAttachmentsItem>? attachments = null;
+            if (request.Attachments != null && request.Attachments.Count > 0)
+            {
+                attachments = request.Attachments.Select(a => new UserMessageDataAttachmentsItem
+                {
+                    Type = a.Type?.ToLowerInvariant() == "directory" 
+                        ? UserMessageDataAttachmentsItemType.Directory 
+                        : UserMessageDataAttachmentsItemType.File,
+                    Path = a.Path ?? string.Empty,
+                    DisplayName = a.DisplayName ?? a.Path ?? string.Empty
+                }).ToList();
+            }
+
+            var messageOptions = new MessageOptions
+            {
+                Prompt = request.Prompt,
+                Mode = request.Mode,
+                Attachments = attachments
+            };
+
+            var messageId = await session.SendAsync(messageOptions, cancellationToken);
+
+            // Update session metadata
+            _sessionManager.IncrementMessageCount(sessionId);
+
+            return new SendMessageResponse
+            {
+                SessionId = sessionId,
+                MessageId = messageId,
+                Success = true
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending message to session {SessionId}", sessionId);
+            return new SendMessageResponse
+            {
+                SessionId = sessionId,
+                Success = false,
+                Error = ex.Message
+            };
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<MessagesResponse> GetMessagesAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting messages for session {SessionId}", sessionId);
+
+        var session = _sessionManager.GetSession(sessionId);
+        if (session == null)
+        {
+            _logger.LogWarning("Session {SessionId} not found for getting messages", sessionId);
+            return new MessagesResponse
+            {
+                SessionId = sessionId,
+                Events = new List<SessionEventDto>(),
+                TotalCount = 0
+            };
+        }
+
+        try
+        {
+            var sdkEvents = await session.GetMessagesAsync(cancellationToken);
+
+            var events = sdkEvents.Select(MapEventToDto).ToList();
+
+            return new MessagesResponse
+            {
+                SessionId = sessionId,
+                Events = events,
+                TotalCount = events.Count
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting messages for session {SessionId}", sessionId);
+            return new MessagesResponse
+            {
+                SessionId = sessionId,
+                Events = new List<SessionEventDto>(),
+                TotalCount = 0
+            };
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> AbortAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Aborting session {SessionId}", sessionId);
+
+        var session = _sessionManager.GetSession(sessionId);
+        if (session == null)
+        {
+            _logger.LogWarning("Session {SessionId} not found for abort", sessionId);
+            return false;
+        }
+
+        try
+        {
+            await session.AbortAsync(cancellationToken);
+            _sessionManager.UpdateLastActivity(sessionId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error aborting session {SessionId}", sessionId);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Maps an SDK session event to a DTO.
+    /// </summary>
+    private static SessionEventDto MapEventToDto(SessionEvent sdkEvent)
+    {
+        var dto = new SessionEventDto
+        {
+            Id = sdkEvent.Id,
+            Type = sdkEvent.Type,
+            Timestamp = sdkEvent.Timestamp,
+            ParentId = sdkEvent.ParentId,
+            Ephemeral = sdkEvent.Ephemeral
+        };
+
+        // Map specific event data based on type
+        dto.Data = sdkEvent switch
+        {
+            UserMessageEvent e => new UserMessageDataDto
+            {
+                Content = e.Data.Content,
+                TransformedContent = e.Data.TransformedContent,
+                Source = e.Data.Source,
+                Attachments = e.Data.Attachments?.Select(a => new MessageAttachmentDto
+                {
+                    Type = a.Type.ToString().ToLowerInvariant(),
+                    Path = a.Path,
+                    DisplayName = a.DisplayName
+                }).ToList()
+            },
+            AssistantMessageEvent e => new AssistantMessageDataDto
+            {
+                MessageId = e.Data.MessageId,
+                Content = e.Data.Content,
+                ParentToolCallId = e.Data.ParentToolCallId,
+                ToolRequests = e.Data.ToolRequests?.Select(tr => new ToolRequestDto
+                {
+                    ToolCallId = tr.ToolCallId,
+                    ToolName = tr.Name,
+                    Arguments = tr.Arguments
+                }).ToList()
+            },
+            AssistantMessageDeltaEvent e => new AssistantMessageDeltaDataDto
+            {
+                MessageId = e.Data.MessageId,
+                DeltaContent = e.Data.DeltaContent,
+                TotalResponseSizeBytes = e.Data.TotalResponseSizeBytes,
+                ParentToolCallId = e.Data.ParentToolCallId
+            },
+            AssistantReasoningEvent e => new AssistantReasoningDataDto
+            {
+                ReasoningId = e.Data.ReasoningId,
+                Content = e.Data.Content
+            },
+            AssistantReasoningDeltaEvent e => new AssistantReasoningDeltaDataDto
+            {
+                ReasoningId = e.Data.ReasoningId,
+                DeltaContent = e.Data.DeltaContent
+            },
+            SessionStartEvent e => new SessionStartDataDto
+            {
+                SessionId = e.Data.SessionId,
+                Version = e.Data.Version,
+                Producer = e.Data.Producer,
+                CopilotVersion = e.Data.CopilotVersion,
+                StartTime = e.Data.StartTime,
+                SelectedModel = e.Data.SelectedModel
+            },
+            SessionErrorEvent e => new SessionErrorDataDto
+            {
+                ErrorType = e.Data.ErrorType,
+                Message = e.Data.Message,
+                Stack = e.Data.Stack
+            },
+            SessionIdleEvent => new SessionIdleDataDto(),
+            ToolExecutionStartEvent e => new ToolExecutionStartDataDto
+            {
+                ToolCallId = e.Data.ToolCallId,
+                ToolName = e.Data.ToolName,
+                Arguments = e.Data.Arguments
+            },
+            ToolExecutionCompleteEvent e => new ToolExecutionCompleteDataDto
+            {
+                ToolCallId = e.Data.ToolCallId,
+                ToolName = string.Empty,
+                Result = e.Data.Result?.Content,
+                Error = e.Data.Error?.Message
+            },
+            AssistantTurnStartEvent e => new AssistantTurnStartDataDto
+            {
+                TurnId = e.Data.TurnId
+            },
+            AssistantTurnEndEvent e => new AssistantTurnEndDataDto
+            {
+                TurnId = e.Data.TurnId
+            },
+            AssistantUsageEvent e => new AssistantUsageDataDto
+            {
+                Model = e.Data.Model,
+                InputTokens = e.Data.InputTokens,
+                OutputTokens = e.Data.OutputTokens,
+                CacheReadTokens = e.Data.CacheReadTokens,
+                CacheWriteTokens = e.Data.CacheWriteTokens,
+                Cost = e.Data.Cost,
+                Duration = e.Data.Duration
+            },
+            _ => null
+        };
+
+        return dto;
+    }
+}

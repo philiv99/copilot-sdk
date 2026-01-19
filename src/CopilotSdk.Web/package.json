@@ -25,11 +25,21 @@
   "license": "ISC",
   "description": "Copilot SDK React Frontend",
   "dependencies": {
+    "@microsoft/signalr": "^10.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
     "@types/react": "^19.2.8",
     "@types/react-dom": "^19.2.3",
+    "axios": "^1.13.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-router-dom": "^6.30.0",
     "react-scripts": "^5.0.1",
     "typescript": "^4.9.5"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.0.9",
+    "eslint-plugin-react-hooks": "^7.0.1"
   }
 }

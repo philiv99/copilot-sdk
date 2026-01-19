@@ -1,0 +1,174 @@
+/**
+ * Styles for the EnvironmentVariableEditor component.
+ */
+
+.env-var-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Variable List */
+.env-var-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.env-var-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.env-var-key {
+  flex: 0 0 150px;
+  padding: 0.5rem 0.75rem;
+  background: rgba(55, 65, 81, 0.5);
+  border-radius: 0.375rem;
+  color: #60a5fa;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.env-var-value {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 0.375rem;
+  color: #f3f4f6;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.875rem;
+}
+
+.env-var-value:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.env-var-value:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.env-var-remove {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid #4b5563;
+  border-radius: 0.375rem;
+  color: #9ca3af;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.env-var-remove:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.env-var-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Add New Variable */
+.env-var-add {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.env-var-new-key {
+  flex: 0 0 150px;
+  padding: 0.5rem 0.75rem;
+  background: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 0.375rem;
+  color: #f3f4f6;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.875rem;
+}
+
+.env-var-new-key:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.env-var-new-key:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.env-var-new-value {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 0.375rem;
+  color: #f3f4f6;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.875rem;
+}
+
+.env-var-new-value:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.env-var-new-value:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.env-var-add-button {
+  flex-shrink: 0;
+  padding: 0.5rem 1rem;
+  background: #3b82f6;
+  border: none;
+  border-radius: 0.375rem;
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.env-var-add-button:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.env-var-add-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Error Message */
+.env-var-error {
+  color: #ef4444;
+  font-size: 0.875rem;
+  padding: 0.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 0.375rem;
+}
+
+/* Empty State */
+.env-var-empty {
+  color: #6b7280;
+  font-style: italic;
+  margin: 0;
+  font-size: 0.875rem;
+}

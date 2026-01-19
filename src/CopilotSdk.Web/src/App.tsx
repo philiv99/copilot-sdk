@@ -1,73 +1,36 @@
-import React, { useEffect, useState } from 'react';
+/**
+ * Main application component.
+ */
+import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { CopilotClientProvider, SessionProvider } from './context';
+import { MainLayout, ErrorBoundary, ToastProvider } from './components';
+import { DashboardView, ClientConfigView, SessionsView } from './views';
 import './App.css';
 
-interface WeatherForecast {
-  date: string;
-  temperatureC: number;
-  temperatureF: number;
-  summary: string;
-}
-
+/**
+ * Main App component with routing and providers.
+ */
 function App() {
-  const [forecasts, setForecasts] = useState<WeatherForecast[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchWeatherData();
-  }, []);
-
-  const fetchWeatherData = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('https://localhost:5001/weatherforecast');
-      if (!response.ok) {
-        throw new Error('Failed to fetch weather data');
-      }
-      const data = await response.json();
-      setForecasts(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Copilot SDK</h1>
-        <p>React + .NET Web API Proof of Concept</p>
-      </header>
-      <main className="App-main">
-        <h2>Weather Forecast</h2>
-        {loading && <p>Loading...</p>}
-        {error && <p className="error">Error: {error}</p>}
-        {!loading && !error && (
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Temp (C)</th>
-                <th>Temp (F)</th>
-                <th>Summary</th>
-              </tr>
-            </thead>
-            <tbody>
-              {forecasts.map((forecast, index) => (
-                <tr key={index}>
-                  <td>{new Date(forecast.date).toLocaleDateString()}</td>
-                  <td>{forecast.temperatureC}</td>
-                  <td>{forecast.temperatureF}</td>
-                  <td>{forecast.summary}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </main>
-    </div>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ToastProvider maxToasts={5}>
+          <CopilotClientProvider autoRefresh={true} refreshInterval={5000}>
+            <SessionProvider autoConnectHub={true}>
+              <MainLayout title="Copilot SDK">
+                <Routes>
+                  <Route path="/" element={<DashboardView />} />
+                  <Route path="/config" element={<ClientConfigView />} />
+                  <Route path="/sessions" element={<SessionsView />} />
+                  <Route path="/sessions/:sessionId" element={<SessionsView />} />
+                </Routes>
+              </MainLayout>
+            </SessionProvider>
+          </CopilotClientProvider>
+        </ToastProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

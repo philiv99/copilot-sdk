@@ -1,0 +1,158 @@
+/**
+ * Styles for the SystemMessageEditor component.
+ */
+
+.system-message-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 0.5rem;
+}
+
+.system-message-header {
+  display: flex;
+  align-items: center;
+}
+
+.system-message-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.system-message-toggle input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
+
+.toggle-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.system-message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #333;
+}
+
+/* Mode selection */
+.system-message-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mode-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+}
+
+.mode-options {
+  display: flex;
+  gap: 1rem;
+}
+
+.mode-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.75rem;
+  background-color: #252525;
+  border: 1px solid #333;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  flex: 1;
+}
+
+.mode-option:hover {
+  border-color: #404040;
+}
+
+.mode-option:has(input:checked) {
+  border-color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.1);
+}
+
+.mode-option input[type="radio"] {
+  display: none;
+}
+
+.mode-option-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.mode-option-description {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Text area */
+.system-message-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.text-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+}
+
+.system-message-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: #252525;
+  border: 1px solid #333;
+  border-radius: 0.375rem;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 100px;
+  transition: border-color 0.15s;
+}
+
+.system-message-textarea:hover:not(:disabled) {
+  border-color: #404040;
+}
+
+.system-message-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.system-message-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.system-message-textarea::placeholder {
+  color: #6b7280;
+}
+
+.char-count {
+  align-self: flex-end;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
