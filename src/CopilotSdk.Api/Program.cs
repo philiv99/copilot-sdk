@@ -30,13 +30,17 @@ builder.Services.AddCors(options =>
 builder.Services.Configure<CopilotClientConfig>(
     builder.Configuration.GetSection("CopilotClient"));
 
+// Register persistence service (must be registered before managers that depend on it)
+builder.Services.AddSingleton<IPersistenceService, PersistenceService>();
+
 // Register Copilot services
 builder.Services.AddSingleton<CopilotClientManager>(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<CopilotClientManager>>();
-    var manager = new CopilotClientManager(logger);
+    var persistenceService = sp.GetRequiredService<IPersistenceService>();
+    var manager = new CopilotClientManager(logger, persistenceService);
     
-    // Apply configuration from appsettings
+    // Apply configuration from appsettings (will be overridden by persisted config if available)
     var config = builder.Configuration.GetSection("CopilotClient").Get<CopilotClientConfig>();
     if (config != null)
     {
@@ -46,8 +50,24 @@ builder.Services.AddSingleton<CopilotClientManager>(sp =>
     return manager;
 });
 builder.Services.AddSingleton<ICopilotClientManager>(sp => sp.GetRequiredService<CopilotClientManager>());
-builder.Services.AddSingleton<SessionManager>();
-builder.Services.AddSingleton<SessionEventDispatcher>();
+
+// Register SessionManager with persistence
+builder.Services.AddSingleton<SessionManager>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<SessionManager>>();
+    var persistenceService = sp.GetRequiredService<IPersistenceService>();
+    return new SessionManager(logger, persistenceService);
+});
+
+// Register SessionEventDispatcher with SessionManager for persistence
+builder.Services.AddSingleton<SessionEventDispatcher>(sp =>
+{
+    var hubContext = sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<SessionHub>>();
+    var logger = sp.GetRequiredService<ILogger<SessionEventDispatcher>>();
+    var sessionManager = sp.GetRequiredService<SessionManager>();
+    return new SessionEventDispatcher(hubContext, logger, sessionManager);
+});
+
 builder.Services.AddSingleton<IToolExecutionService, ToolExecutionService>();
 builder.Services.AddScoped<ICopilotClientService, CopilotClientService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
@@ -57,10 +77,13 @@ builder.Services.AddHostedService<CopilotClientHostedService>();
 
 var app = builder.Build();
 
-// Initialize SessionManager with EventDispatcher
+// Initialize SessionManager with EventDispatcher and load persisted data
 var sessionManager = app.Services.GetRequiredService<SessionManager>();
 var eventDispatcher = app.Services.GetRequiredService<SessionEventDispatcher>();
 sessionManager.SetEventDispatcher(eventDispatcher);
+
+// Load persisted data on startup
+await LoadPersistedDataAsync(app.Services);
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -87,3 +110,35 @@ app.MapControllers();
 app.MapHub<SessionHub>("/hubs/session").RequireCors("AllowReactApp");
 
 app.Run();
+
+/// <summary>
+/// Loads persisted client configuration and sessions on application startup.
+/// </summary>
+static async Task LoadPersistedDataAsync(IServiceProvider services)
+{
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    
+    try
+    {
+        // Load persisted client configuration
+        var clientManager = services.GetRequiredService<CopilotClientManager>();
+        await clientManager.LoadPersistedConfigAsync();
+        logger.LogInformation("Loaded persisted client configuration");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to load persisted client configuration, using defaults");
+    }
+
+    try
+    {
+        // Load persisted sessions
+        var sessionManager = services.GetRequiredService<SessionManager>();
+        await sessionManager.LoadPersistedSessionsAsync();
+        logger.LogInformation("Loaded persisted sessions");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to load persisted sessions");
+    }
+}

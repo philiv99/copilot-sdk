@@ -24,4 +24,14 @@ public class ToolParameter
     /// Whether this parameter is required.
     /// </summary>
     public bool Required { get; set; } = false;
+
+    /// <summary>
+    /// Default value for the parameter.
+    /// </summary>
+    public string? DefaultValue { get; set; }
+
+    /// <summary>
+    /// Allowed values (for enum-like parameters).
+    /// </summary>
+    public List<string>? AllowedValues { get; set; }
 }

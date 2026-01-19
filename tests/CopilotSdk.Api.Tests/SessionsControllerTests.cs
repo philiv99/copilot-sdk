@@ -576,4 +576,78 @@ public class SessionsControllerTests
     }
 
     #endregion
+
+    #region GetSessionHistory Tests
+
+    [Fact]
+    public async Task GetSessionHistory_ReturnsOkResult_WithPersistedMessages()
+    {
+        // Arrange
+        var sessionId = "session-with-history";
+        var expectedResponse = new PersistedMessagesResponse
+        {
+            SessionId = sessionId,
+            Messages = new List<PersistedMessage>
+            {
+                new() { Id = Guid.NewGuid(), Role = "user", Content = "Hello" },
+                new() { Id = Guid.NewGuid(), Role = "assistant", Content = "Hi there!" }
+            },
+            TotalCount = 2,
+            CreatedAt = DateTime.UtcNow.AddHours(-1),
+            LastActivityAt = DateTime.UtcNow
+        };
+        _sessionServiceMock.Setup(s => s.GetPersistedHistoryAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedResponse);
+
+        // Act
+        var result = await _controller.GetSessionHistory(sessionId, CancellationToken.None);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var actualResponse = Assert.IsType<PersistedMessagesResponse>(okResult.Value);
+        Assert.Equal(sessionId, actualResponse.SessionId);
+        Assert.Equal(2, actualResponse.TotalCount);
+        Assert.Equal(2, actualResponse.Messages.Count);
+    }
+
+    [Fact]
+    public async Task GetSessionHistory_ReturnsEmptyList_WhenNoMessages()
+    {
+        // Arrange
+        var sessionId = "session-without-history";
+        var expectedResponse = new PersistedMessagesResponse
+        {
+            SessionId = sessionId,
+            Messages = new List<PersistedMessage>(),
+            TotalCount = 0
+        };
+        _sessionServiceMock.Setup(s => s.GetPersistedHistoryAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedResponse);
+
+        // Act
+        var result = await _controller.GetSessionHistory(sessionId, CancellationToken.None);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var actualResponse = Assert.IsType<PersistedMessagesResponse>(okResult.Value);
+        Assert.Empty(actualResponse.Messages);
+        Assert.Equal(0, actualResponse.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetSessionHistory_CallsServiceWithCorrectSessionId()
+    {
+        // Arrange
+        var sessionId = "specific-session-history";
+        _sessionServiceMock.Setup(s => s.GetPersistedHistoryAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PersistedMessagesResponse { SessionId = sessionId });
+
+        // Act
+        await _controller.GetSessionHistory(sessionId, CancellationToken.None);
+
+        // Assert
+        _sessionServiceMock.Verify(s => s.GetPersistedHistoryAsync(sessionId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
 }

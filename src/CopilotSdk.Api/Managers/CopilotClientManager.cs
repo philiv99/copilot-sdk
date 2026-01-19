@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using CopilotSdk.Api.Models.Domain;
+using CopilotSdk.Api.Services;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.AI;
 using SdkConnectionState = GitHub.Copilot.SDK.ConnectionState;
@@ -19,15 +20,17 @@ namespace CopilotSdk.Api.Managers;
 public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
 {
     private readonly ILogger<CopilotClientManager> _logger;
+    private readonly IPersistenceService? _persistenceService;
     private readonly object _lock = new();
     private CopilotClient? _client;
     private CopilotClientConfig _config = new();
     private DateTime? _connectedAt;
     private string? _lastError;
 
-    public CopilotClientManager(ILogger<CopilotClientManager> logger)
+    public CopilotClientManager(ILogger<CopilotClientManager> logger, IPersistenceService? persistenceService = null)
     {
         _logger = logger;
+        _persistenceService = persistenceService;
     }
 
     /// <summary>
@@ -92,6 +95,93 @@ public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
             }
             _config = config;
             _logger.LogInformation("Client configuration updated");
+        }
+
+        // Persist the configuration asynchronously
+        _ = PersistConfigAsync();
+    }
+
+    /// <summary>
+    /// Updates the client configuration and persists it. Client must be stopped to update config.
+    /// </summary>
+    public async Task UpdateConfigAsync(CopilotClientConfig config, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            if (_client != null && _client.State != SdkConnectionState.Disconnected)
+            {
+                throw new InvalidOperationException("Cannot update configuration while client is running. Stop the client first.");
+            }
+            _config = config;
+            _logger.LogInformation("Client configuration updated");
+        }
+
+        await PersistConfigAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Loads the persisted client configuration.
+    /// </summary>
+    public async Task LoadPersistedConfigAsync(CancellationToken cancellationToken = default)
+    {
+        if (_persistenceService == null)
+        {
+            _logger.LogDebug("No persistence service available, skipping config load");
+            return;
+        }
+
+        try
+        {
+            var persistedConfig = await _persistenceService.LoadClientConfigAsync(cancellationToken);
+            if (persistedConfig != null)
+            {
+                lock (_lock)
+                {
+                    _config = persistedConfig;
+                }
+                _logger.LogInformation("Loaded persisted client configuration");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load persisted client configuration");
+        }
+    }
+
+    private async Task PersistConfigAsync(CancellationToken cancellationToken = default)
+    {
+        if (_persistenceService == null)
+        {
+            return;
+        }
+
+        try
+        {
+            CopilotClientConfig configCopy;
+            lock (_lock)
+            {
+                // Create a copy to avoid locking during async I/O
+                configCopy = new CopilotClientConfig
+                {
+                    CliPath = _config.CliPath,
+                    CliArgs = _config.CliArgs,
+                    CliUrl = _config.CliUrl,
+                    Port = _config.Port,
+                    UseStdio = _config.UseStdio,
+                    LogLevel = _config.LogLevel,
+                    AutoStart = _config.AutoStart,
+                    AutoRestart = _config.AutoRestart,
+                    Cwd = _config.Cwd,
+                    Environment = _config.Environment?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                };
+            }
+
+            await _persistenceService.SaveClientConfigAsync(configCopy, cancellationToken);
+            _logger.LogDebug("Client configuration persisted");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist client configuration");
         }
     }
 

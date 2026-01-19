@@ -249,6 +249,26 @@ public class SessionsController : ControllerBase
     }
 
     /// <summary>
+    /// Gets the persisted message history for a session.
+    /// Returns messages saved to disk from current and previous runs.
+    /// </summary>
+    /// <param name="sessionId">The session ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Persisted message history.</returns>
+    [HttpGet("{sessionId}/history")]
+    [ProducesResponseType(typeof(PersistedMessagesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<PersistedMessagesResponse>> GetSessionHistory(
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogDebug("Getting persisted history for session {SessionId}", sessionId);
+
+        var response = await _sessionService.GetPersistedHistoryAsync(sessionId, cancellationToken);
+        return Ok(response);
+    }
+
+    /// <summary>
     /// Aborts the currently processing message in a session.
     /// </summary>
     /// <param name="sessionId">The session ID.</param>

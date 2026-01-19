@@ -72,4 +72,13 @@ public interface ISessionService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if the abort was successful, false if the session wasn't found.</returns>
     Task<bool> AbortAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the persisted message history for a session.
+    /// This returns messages saved to disk, which may include messages from previous runs.
+    /// </summary>
+    /// <param name="sessionId">The session ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Response containing the session's persisted message history.</returns>
+    Task<PersistedMessagesResponse> GetPersistedHistoryAsync(string sessionId, CancellationToken cancellationToken = default);
 }

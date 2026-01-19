@@ -261,6 +261,22 @@ public class SessionService : ISessionService
             // Update session metadata
             _sessionManager.IncrementMessageCount(sessionId);
 
+            // Persist the user message
+            var persistedMessage = new PersistedMessage
+            {
+                Id = Guid.NewGuid(),
+                Timestamp = DateTime.UtcNow,
+                Role = "user",
+                Content = request.Prompt,
+                Attachments = request.Attachments?.Select(a => new PersistedAttachment
+                {
+                    Type = a.Type ?? "file",
+                    Path = a.Path ?? string.Empty,
+                    DisplayName = a.DisplayName
+                }).ToList()
+            };
+            await _sessionManager.AppendMessagesAsync(sessionId, new[] { persistedMessage }, cancellationToken);
+
             return new SendMessageResponse
             {
                 SessionId = sessionId,
@@ -345,6 +361,24 @@ public class SessionService : ISessionService
             _logger.LogError(ex, "Error aborting session {SessionId}", sessionId);
             return false;
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task<PersistedMessagesResponse> GetPersistedHistoryAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting persisted history for session {SessionId}", sessionId);
+
+        var messages = await _sessionManager.GetPersistedMessagesAsync(sessionId, cancellationToken);
+        var metadata = _sessionManager.GetMetadata(sessionId);
+
+        return new PersistedMessagesResponse
+        {
+            SessionId = sessionId,
+            Messages = messages,
+            TotalCount = messages.Count,
+            CreatedAt = metadata?.CreatedAt,
+            LastActivityAt = metadata?.LastActivityAt
+        };
     }
 
     /// <summary>

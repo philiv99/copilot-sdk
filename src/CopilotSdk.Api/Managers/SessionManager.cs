@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using CopilotSdk.Api.EventHandlers;
 using CopilotSdk.Api.Models.Domain;
+using CopilotSdk.Api.Services;
 using GitHub.Copilot.SDK;
 using SdkSessionMetadata = GitHub.Copilot.SDK.SessionMetadata;
 
@@ -13,14 +14,16 @@ namespace CopilotSdk.Api.Managers;
 public class SessionManager
 {
     private readonly ILogger<SessionManager> _logger;
+    private readonly IPersistenceService? _persistenceService;
     private readonly ConcurrentDictionary<string, Models.Domain.SessionMetadata> _sessionMetadata = new();
     private readonly ConcurrentDictionary<string, CopilotSession> _activeSessions = new();
     private readonly ConcurrentDictionary<string, IDisposable> _eventSubscriptions = new();
     private SessionEventDispatcher? _eventDispatcher;
 
-    public SessionManager(ILogger<SessionManager> logger)
+    public SessionManager(ILogger<SessionManager> logger, IPersistenceService? persistenceService = null)
     {
         _logger = logger;
+        _persistenceService = persistenceService;
     }
 
     /// <summary>
@@ -60,6 +63,9 @@ public class SessionManager
 
         // Set up event handler if dispatcher is available
         SetupEventHandler(sessionId, session);
+
+        // Persist the session asynchronously
+        _ = PersistSessionAsync(sessionId, metadata);
 
         _logger.LogInformation("Registered session {SessionId}", sessionId);
     }
@@ -161,6 +167,8 @@ public class SessionManager
 
         if (removed)
         {
+            // Delete the persisted session file
+            _ = DeletePersistedSessionAsync(sessionId);
             _logger.LogInformation("Removed session {SessionId}", sessionId);
         }
 
@@ -262,4 +270,226 @@ public class SessionManager
             }
         }
     }
+
+    #region Persistence Methods
+
+    /// <summary>
+    /// Loads all persisted sessions from disk into memory.
+    /// </summary>
+    public async Task LoadPersistedSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_persistenceService == null)
+        {
+            _logger.LogDebug("No persistence service available, skipping session load");
+            return;
+        }
+
+        try
+        {
+            var persistedSessions = await _persistenceService.LoadAllSessionsAsync(cancellationToken);
+            foreach (var sessionData in persistedSessions)
+            {
+                var metadata = ConvertToMetadata(sessionData);
+                _sessionMetadata.TryAdd(sessionData.SessionId, metadata);
+            }
+            _logger.LogInformation("Loaded {Count} persisted sessions", persistedSessions.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load persisted sessions");
+        }
+    }
+
+    /// <summary>
+    /// Persists a session to disk.
+    /// </summary>
+    public async Task PersistSessionAsync(string sessionId, Models.Domain.SessionMetadata? metadata = null, CancellationToken cancellationToken = default)
+    {
+        if (_persistenceService == null)
+        {
+            return;
+        }
+
+        try
+        {
+            metadata ??= GetMetadata(sessionId);
+            if (metadata == null)
+            {
+                _logger.LogWarning("Cannot persist session {SessionId}: metadata not found", sessionId);
+                return;
+            }
+
+            var sessionData = await ConvertToPersistedDataAsync(sessionId, metadata, cancellationToken);
+            await _persistenceService.SaveSessionAsync(sessionData, cancellationToken);
+            _logger.LogDebug("Persisted session {SessionId}", sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist session {SessionId}", sessionId);
+        }
+    }
+
+    /// <summary>
+    /// Appends messages to a session's persisted data.
+    /// </summary>
+    public async Task AppendMessagesAsync(string sessionId, IEnumerable<PersistedMessage> messages, CancellationToken cancellationToken = default)
+    {
+        if (_persistenceService == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _persistenceService.AppendMessagesAsync(sessionId, messages, cancellationToken);
+            _logger.LogDebug("Appended messages to session {SessionId}", sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to append messages to session {SessionId}", sessionId);
+        }
+    }
+
+    /// <summary>
+    /// Gets all persisted messages for a session.
+    /// </summary>
+    public async Task<List<PersistedMessage>> GetPersistedMessagesAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        if (_persistenceService == null)
+        {
+            return new List<PersistedMessage>();
+        }
+
+        return await _persistenceService.GetMessagesAsync(sessionId, cancellationToken);
+    }
+
+    private async Task DeletePersistedSessionAsync(string sessionId)
+    {
+        if (_persistenceService == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _persistenceService.DeleteSessionAsync(sessionId);
+            _logger.LogDebug("Deleted persisted session {SessionId}", sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete persisted session {SessionId}", sessionId);
+        }
+    }
+
+    private static Models.Domain.SessionMetadata ConvertToMetadata(PersistedSessionData sessionData)
+    {
+        return new Models.Domain.SessionMetadata
+        {
+            SessionId = sessionData.SessionId,
+            CreatedAt = sessionData.CreatedAt,
+            LastActivityAt = sessionData.LastActivityAt,
+            MessageCount = sessionData.MessageCount,
+            Summary = sessionData.Summary,
+            IsRemote = sessionData.IsRemote,
+            Config = sessionData.Config != null ? ConvertToSessionConfig(sessionData.Config) : null
+        };
+    }
+
+    private static Models.Domain.SessionConfig ConvertToSessionConfig(PersistedSessionConfig config)
+    {
+        return new Models.Domain.SessionConfig
+        {
+            Model = config.Model,
+            Streaming = config.Streaming,
+            SystemMessage = config.SystemMessage != null ? new Models.Domain.SystemMessageConfig
+            {
+                Mode = config.SystemMessage.Mode,
+                Content = config.SystemMessage.Content
+            } : null,
+            AvailableTools = config.AvailableTools,
+            ExcludedTools = config.ExcludedTools,
+            Provider = config.Provider != null ? new Models.Domain.ProviderConfig
+            {
+                Type = config.Provider.Type,
+                BaseUrl = config.Provider.BaseUrl,
+                ApiKey = config.Provider.ApiKey,
+                BearerToken = config.Provider.BearerToken,
+                WireApi = config.Provider.WireApi
+            } : null,
+            Tools = config.Tools?.Select(t => new Models.Domain.ToolDefinition
+            {
+                Name = t.Name,
+                Description = t.Description,
+                Parameters = t.Parameters?.Select(p => new Models.Domain.ToolParameter
+                {
+                    Name = p.Name,
+                    Description = p.Description,
+                    Type = p.Type,
+                    Required = p.Required,
+                    DefaultValue = p.DefaultValue,
+                    AllowedValues = p.AllowedValues
+                }).ToList()
+            }).ToList()
+        };
+    }
+
+    private async Task<PersistedSessionData> ConvertToPersistedDataAsync(string sessionId, Models.Domain.SessionMetadata metadata, CancellationToken cancellationToken)
+    {
+        // Load existing messages if any
+        var existingMessages = _persistenceService != null 
+            ? await _persistenceService.GetMessagesAsync(sessionId, cancellationToken) 
+            : new List<PersistedMessage>();
+
+        return new PersistedSessionData
+        {
+            SessionId = sessionId,
+            CreatedAt = metadata.CreatedAt ?? DateTime.UtcNow,
+            LastActivityAt = metadata.LastActivityAt,
+            MessageCount = metadata.MessageCount,
+            Summary = metadata.Summary,
+            IsRemote = metadata.IsRemote,
+            Config = metadata.Config != null ? ConvertToPersistedConfig(metadata.Config) : null,
+            Messages = existingMessages
+        };
+    }
+
+    private static PersistedSessionConfig ConvertToPersistedConfig(Models.Domain.SessionConfig config)
+    {
+        return new PersistedSessionConfig
+        {
+            Model = config.Model,
+            Streaming = config.Streaming,
+            SystemMessage = config.SystemMessage != null ? new PersistedSystemMessageConfig
+            {
+                Mode = config.SystemMessage.Mode,
+                Content = config.SystemMessage.Content
+            } : null,
+            AvailableTools = config.AvailableTools,
+            ExcludedTools = config.ExcludedTools,
+            Provider = config.Provider != null ? new PersistedProviderConfig
+            {
+                Type = config.Provider.Type,
+                BaseUrl = config.Provider.BaseUrl,
+                ApiKey = config.Provider.ApiKey,
+                BearerToken = config.Provider.BearerToken,
+                WireApi = config.Provider.WireApi
+            } : null,
+            Tools = config.Tools?.Select(t => new PersistedToolDefinition
+            {
+                Name = t.Name,
+                Description = t.Description,
+                Parameters = t.Parameters?.Select(p => new PersistedToolParameter
+                {
+                    Name = p.Name,
+                    Description = p.Description,
+                    Type = p.Type,
+                    Required = p.Required,
+                    DefaultValue = p.DefaultValue,
+                    AllowedValues = p.AllowedValues
+                }).ToList()
+            }).ToList()
+        };
+    }
+
+    #endregion
 }

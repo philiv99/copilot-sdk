@@ -1,5 +1,8 @@
+using System.Text.Json;
 using CopilotSdk.Api.Hubs;
+using CopilotSdk.Api.Managers;
 using CopilotSdk.Api.Models.Domain;
+using CopilotSdk.Api.Services;
 using GitHub.Copilot.SDK;
 using Microsoft.AspNetCore.SignalR;
 
@@ -8,18 +11,31 @@ namespace CopilotSdk.Api.EventHandlers;
 /// <summary>
 /// Dispatches SDK session events to SignalR clients.
 /// Maps SDK event types to DTOs and sends them to the appropriate session groups.
+/// Also persists significant events (assistant messages, tool executions) to storage.
 /// </summary>
 public class SessionEventDispatcher
 {
     private readonly IHubContext<SessionHub> _hubContext;
     private readonly ILogger<SessionEventDispatcher> _logger;
+    private readonly SessionManager? _sessionManager;
 
     public SessionEventDispatcher(
         IHubContext<SessionHub> hubContext,
-        ILogger<SessionEventDispatcher> logger)
+        ILogger<SessionEventDispatcher> logger,
+        SessionManager? sessionManager = null)
     {
         _hubContext = hubContext;
         _logger = logger;
+        _sessionManager = sessionManager;
+    }
+
+    /// <summary>
+    /// Sets the session manager for persistence operations.
+    /// Called during application startup to avoid circular dependencies.
+    /// </summary>
+    internal void SetSessionManager(SessionManager sessionManager)
+    {
+        // This is now set via constructor injection, but keeping for backward compatibility
     }
 
     /// <summary>
@@ -37,6 +53,9 @@ public class SessionEventDispatcher
                 _logger.LogDebug("Skipping unmapped event type: {EventType}", sessionEvent.Type);
                 return;
             }
+
+            // Persist significant events
+            await PersistEventAsync(sessionId, sessionEvent);
 
             // Use different methods for delta events vs regular events
             if (IsDeltaEvent(sessionEvent.Type))
@@ -116,6 +135,84 @@ public class SessionEventDispatcher
         // This allows clients to at least see the event type
         return dto;
     }
+
+    #region Persistence
+
+    /// <summary>
+    /// Persists significant events (assistant messages, tool executions) to storage.
+    /// Delta events are not persisted as they are ephemeral.
+    /// </summary>
+    private async Task PersistEventAsync(string sessionId, SessionEvent sessionEvent)
+    {
+        if (_sessionManager == null)
+        {
+            return;
+        }
+
+        // Skip ephemeral/delta events
+        if (IsDeltaEvent(sessionEvent.Type))
+        {
+            return;
+        }
+
+        try
+        {
+            PersistedMessage? message = sessionEvent switch
+            {
+                AssistantMessageEvent e => new PersistedMessage
+                {
+                    Id = sessionEvent.Id,
+                    Timestamp = sessionEvent.Timestamp.UtcDateTime,
+                    Role = "assistant",
+                    Content = e.Data.Content,
+                    MessageId = e.Data.MessageId,
+                    ParentToolCallId = e.Data.ParentToolCallId,
+                    ToolRequests = e.Data.ToolRequests?.Select(tr => new PersistedToolRequest
+                    {
+                        ToolCallId = tr.ToolCallId,
+                        ToolName = tr.Name,
+                        Arguments = tr.Arguments != null ? JsonSerializer.Serialize(tr.Arguments) : null
+                    }).ToList()
+                },
+                AssistantReasoningEvent e => new PersistedMessage
+                {
+                    Id = sessionEvent.Id,
+                    Timestamp = sessionEvent.Timestamp.UtcDateTime,
+                    Role = "assistant",
+                    ReasoningContent = e.Data.Content
+                },
+                ToolExecutionCompleteEvent e => new PersistedMessage
+                {
+                    Id = sessionEvent.Id,
+                    Timestamp = sessionEvent.Timestamp.UtcDateTime,
+                    Role = "tool",
+                    ToolCallId = e.Data.ToolCallId,
+                    ToolResult = e.Data.Result?.Content,
+                    ToolError = e.Data.Error?.Message
+                },
+                SessionErrorEvent e => new PersistedMessage
+                {
+                    Id = sessionEvent.Id,
+                    Timestamp = sessionEvent.Timestamp.UtcDateTime,
+                    Role = "system",
+                    Content = $"Error: {e.Data.Message}"
+                },
+                _ => null
+            };
+
+            if (message != null)
+            {
+                await _sessionManager.AppendMessagesAsync(sessionId, new[] { message });
+                _logger.LogDebug("Persisted {EventType} to session {SessionId}", sessionEvent.Type, sessionId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist event {EventType} to session {SessionId}", sessionEvent.Type, sessionId);
+        }
+    }
+
+    #endregion
 
     #region Data Mappers
 
