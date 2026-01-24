@@ -69,18 +69,41 @@ export function useSessionHub(options: UseSessionHubOptions = {}): UseSessionHub
 
   const connectionRef = useRef<signalR.HubConnection | null>(null);
   const joinedSessionsRef = useRef<Set<string>>(new Set());
+  
+  // Use refs for callbacks to avoid stale closures in SignalR event handlers
+  const onSessionEventRef = useRef(onSessionEvent);
+  const onStreamingDeltaRef = useRef(onStreamingDelta);
+  const onConnectionStateChangeRef = useRef(onConnectionStateChange);
+  const onErrorRef = useRef(onError);
+  
+  // Keep refs updated with the latest callbacks
+  useEffect(() => {
+    onSessionEventRef.current = onSessionEvent;
+  }, [onSessionEvent]);
+  
+  useEffect(() => {
+    onStreamingDeltaRef.current = onStreamingDelta;
+  }, [onStreamingDelta]);
+  
+  useEffect(() => {
+    onConnectionStateChangeRef.current = onConnectionStateChange;
+  }, [onConnectionStateChange]);
+  
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   // Update connection state and notify listener
   const updateConnectionState = useCallback((state: HubConnectionState) => {
     setConnectionState(state);
-    onConnectionStateChange?.(state);
-  }, [onConnectionStateChange]);
+    onConnectionStateChangeRef.current?.(state);
+  }, []);
 
   // Handle errors
   const handleError = useCallback((err: Error) => {
     setError(err);
-    onError?.(err);
-  }, [onError]);
+    onErrorRef.current?.(err);
+  }, []);
 
   // Create the SignalR connection
   const createConnection = useCallback(() => {
@@ -104,14 +127,14 @@ export function useSessionHub(options: UseSessionHubOptions = {}): UseSessionHub
       .configureLogging(signalR.LogLevel.Information)
       .build();
 
-    // Handle session events
+    // Handle session events - use ref to always get the latest callback
     connection.on('OnSessionEvent', (sessionId: string, event: SessionEvent) => {
-      onSessionEvent?.(sessionId, event);
+      onSessionEventRef.current?.(sessionId, event);
     });
 
-    // Handle streaming deltas
+    // Handle streaming deltas - use ref to always get the latest callback
     connection.on('OnStreamingDelta', (delta: StreamingDelta) => {
-      onStreamingDelta?.(delta);
+      onStreamingDeltaRef.current?.(delta);
     });
 
     // Handle connection state changes
@@ -149,7 +172,7 @@ export function useSessionHub(options: UseSessionHubOptions = {}): UseSessionHub
 
     connectionRef.current = connection;
     return connection;
-  }, [onSessionEvent, onStreamingDelta, updateConnectionState, handleError]);
+  }, [updateConnectionState, handleError]);
 
   // Connect to the hub
   const connect = useCallback(async () => {

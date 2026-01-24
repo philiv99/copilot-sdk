@@ -389,3 +389,34 @@ public class AbortDataDto
     /// </summary>
     public string? Source { get; set; }
 }
+
+/// <summary>
+/// Streaming delta DTO sent via SignalR for real-time content streaming.
+/// </summary>
+public class StreamingDeltaDto
+{
+    /// <summary>
+    /// Session ID this delta belongs to.
+    /// </summary>
+    public string SessionId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Type of delta: "message" or "reasoning".
+    /// </summary>
+    public string Type { get; set; } = string.Empty;
+
+    /// <summary>
+    /// ID of the message or reasoning block.
+    /// </summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The delta content.
+    /// </summary>
+    public string Content { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Total response size in bytes so far.
+    /// </summary>
+    public double? TotalBytes { get; set; }
+}

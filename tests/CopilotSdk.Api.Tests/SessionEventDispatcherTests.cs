@@ -58,12 +58,14 @@ public class SessionEventDispatcherTests
         var sessionId = "test-session";
         var expectedGroup = $"session-{sessionId}";
         SessionEventDto? capturedDto = null;
+        string? capturedSessionId = null;
 
         _clientProxyMock
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[0] as SessionEventDto;
+                capturedSessionId = args[0] as string;
+                capturedDto = args[1] as SessionEventDto;
             })
             .Returns(Task.CompletedTask);
 
@@ -72,6 +74,7 @@ public class SessionEventDispatcherTests
 
         // Assert
         _hubClientsMock.Verify(c => c.Group(expectedGroup), Times.Once);
+        Assert.Equal(sessionId, capturedSessionId);
         Assert.NotNull(capturedDto);
         Assert.Equal("session.idle", capturedDto.Type);
     }
@@ -87,7 +90,7 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[0] as SessionEventDto;
+                capturedDto = args[1] as SessionEventDto;
             })
             .Returns(Task.CompletedTask);
 
@@ -115,7 +118,7 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[0] as SessionEventDto;
+                capturedDto = args[1] as SessionEventDto;
             })
             .Returns(Task.CompletedTask);
 
@@ -147,7 +150,7 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[0] as SessionEventDto;
+                capturedDto = args[1] as SessionEventDto;
             })
             .Returns(Task.CompletedTask);
 
@@ -174,7 +177,7 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[0] as SessionEventDto;
+                capturedDto = args[1] as SessionEventDto;
             })
             .Returns(Task.CompletedTask);
 
@@ -201,13 +204,13 @@ public class SessionEventDispatcherTests
         // Arrange
         var sessionId = "test-session";
         var expectedGroup = $"session-{sessionId}";
-        SessionEventDto? capturedDto = null;
+        StreamingDeltaDto? capturedDto = null;
 
         _clientProxyMock
             .Setup(c => c.SendCoreAsync("OnStreamingDelta", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[0] as SessionEventDto;
+                capturedDto = args[0] as StreamingDeltaDto;
             })
             .Returns(Task.CompletedTask);
 
@@ -219,7 +222,10 @@ public class SessionEventDispatcherTests
         // Assert
         _hubClientsMock.Verify(c => c.Group(expectedGroup), Times.Once);
         Assert.NotNull(capturedDto);
-        Assert.Equal("assistant.message_delta", capturedDto.Type);
+        Assert.Equal("message", capturedDto.Type);
+        Assert.Equal("msg-123", capturedDto.Id);
+        Assert.Equal("Hello", capturedDto.Content);
+        Assert.Equal(sessionId, capturedDto.SessionId);
     }
 
     [Fact]
@@ -227,13 +233,13 @@ public class SessionEventDispatcherTests
     {
         // Arrange
         var sessionId = "test-session";
-        SessionEventDto? capturedDto = null;
+        StreamingDeltaDto? capturedDto = null;
 
         _clientProxyMock
             .Setup(c => c.SendCoreAsync("OnStreamingDelta", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[0] as SessionEventDto;
+                capturedDto = args[0] as StreamingDeltaDto;
             })
             .Returns(Task.CompletedTask);
 
@@ -244,7 +250,10 @@ public class SessionEventDispatcherTests
 
         // Assert
         Assert.NotNull(capturedDto);
-        Assert.Equal("assistant.reasoning_delta", capturedDto.Type);
+        Assert.Equal("reasoning", capturedDto.Type);
+        Assert.Equal("reasoning-123", capturedDto.Id);
+        Assert.Equal("Thinking...", capturedDto.Content);
+        Assert.Equal(sessionId, capturedDto.SessionId);
     }
 
     #endregion
@@ -262,7 +271,7 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[0] as SessionEventDto;
+                capturedDto = args[1] as SessionEventDto;
             })
             .Returns(Task.CompletedTask);
 
@@ -290,7 +299,7 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[0] as SessionEventDto;
+                capturedDto = args[1] as SessionEventDto;
             })
             .Returns(Task.CompletedTask);
 

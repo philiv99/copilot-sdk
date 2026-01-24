@@ -47,24 +47,29 @@ public class SessionEventDispatcher
     {
         try
         {
-            var eventDto = MapToDto(sessionEvent);
-            if (eventDto == null)
-            {
-                _logger.LogDebug("Skipping unmapped event type: {EventType}", sessionEvent.Type);
-                return;
-            }
-
             // Persist significant events
             await PersistEventAsync(sessionId, sessionEvent);
 
             // Use different methods for delta events vs regular events
             if (IsDeltaEvent(sessionEvent.Type))
             {
-                await _hubContext.SendStreamingDeltaAsync(sessionId, eventDto);
+                var deltaDto = MapToStreamingDelta(sessionId, sessionEvent);
+                if (deltaDto == null)
+                {
+                    _logger.LogDebug("Skipping unmapped delta event type: {EventType}", sessionEvent.Type);
+                    return;
+                }
+                await _hubContext.SendStreamingDeltaAsync(sessionId, deltaDto);
                 _logger.LogDebug("Sent streaming delta {EventType} to session {SessionId}", sessionEvent.Type, sessionId);
             }
             else
             {
+                var eventDto = MapToDto(sessionEvent);
+                if (eventDto == null)
+                {
+                    _logger.LogDebug("Skipping unmapped event type: {EventType}", sessionEvent.Type);
+                    return;
+                }
                 await _hubContext.SendSessionEventAsync(sessionId, eventDto);
                 _logger.LogDebug("Sent event {EventType} to session {SessionId}", sessionEvent.Type, sessionId);
             }
@@ -96,6 +101,33 @@ public class SessionEventDispatcher
     {
         return eventType == "assistant.message_delta" ||
                eventType == "assistant.reasoning_delta";
+    }
+
+    /// <summary>
+    /// Maps a delta event to a StreamingDeltaDto for SignalR transmission.
+    /// </summary>
+    private static StreamingDeltaDto? MapToStreamingDelta(string sessionId, SessionEvent sessionEvent)
+    {
+        return sessionEvent switch
+        {
+            AssistantMessageDeltaEvent e => new StreamingDeltaDto
+            {
+                SessionId = sessionId,
+                Type = "message",
+                Id = e.Data.MessageId,
+                Content = e.Data.DeltaContent,
+                TotalBytes = e.Data.TotalResponseSizeBytes
+            },
+            AssistantReasoningDeltaEvent e => new StreamingDeltaDto
+            {
+                SessionId = sessionId,
+                Type = "reasoning",
+                Id = e.Data.ReasoningId,
+                Content = e.Data.DeltaContent,
+                TotalBytes = null
+            },
+            _ => null
+        };
     }
 
     /// <summary>

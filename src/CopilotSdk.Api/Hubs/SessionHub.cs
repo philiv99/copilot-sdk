@@ -106,7 +106,8 @@ public static class SessionHubExtensions
         SessionEventDto eventDto)
     {
         var groupName = SessionHub.GetGroupName(sessionId);
-        await hubContext.Clients.Group(groupName).SendAsync("OnSessionEvent", eventDto);
+        // Send sessionId as first parameter to match frontend expectations
+        await hubContext.Clients.Group(groupName).SendAsync("OnSessionEvent", sessionId, eventDto);
     }
 
     /// <summary>
@@ -114,14 +115,14 @@ public static class SessionHubExtensions
     /// </summary>
     /// <param name="hubContext">The hub context.</param>
     /// <param name="sessionId">The session ID.</param>
-    /// <param name="eventDto">The delta event to send.</param>
+    /// <param name="deltaDto">The streaming delta DTO.</param>
     public static async Task SendStreamingDeltaAsync(
         this IHubContext<SessionHub> hubContext,
         string sessionId,
-        SessionEventDto eventDto)
+        StreamingDeltaDto deltaDto)
     {
         var groupName = SessionHub.GetGroupName(sessionId);
-        await hubContext.Clients.Group(groupName).SendAsync("OnStreamingDelta", eventDto);
+        await hubContext.Clients.Group(groupName).SendAsync("OnStreamingDelta", deltaDto);
     }
 
     /// <summary>
