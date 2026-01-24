@@ -740,4 +740,255 @@ public class IntegrationTests
     }
 
     #endregion
+
+    #region Prompt Refinement Integration Tests
+
+    [Fact]
+    public async Task PromptRefinement_WithValidContent_ReturnsRefinedContent()
+    {
+        // Arrange
+        var serviceMock = new Mock<IPromptRefinementService>();
+        var loggerMock = new Mock<ILogger<Controllers.PromptRefinementController>>();
+        var controller = new Controllers.PromptRefinementController(serviceMock.Object, loggerMock.Object);
+
+        var request = new RefinePromptRequest
+        {
+            Content = "Build a task management app",
+            Context = "Web application for small teams",
+            RefinementFocus = "detail"
+        };
+
+        serviceMock.Setup(s => s.RefinePromptAsync(It.IsAny<RefinePromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RefinePromptResponse
+            {
+                Success = true,
+                OriginalContent = "Build a task management app",
+                RefinedContent = "You are an AI assistant helping to build a comprehensive task management web application designed for small teams. The application should include features for creating, assigning, and tracking tasks with deadlines, priorities, and status updates.",
+                IterationCount = 1
+            });
+
+        // Act
+        var result = await controller.RefinePrompt(request, _ct);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<RefinePromptResponse>(okResult.Value);
+        Assert.True(response.Success);
+        Assert.Equal("Build a task management app", response.OriginalContent);
+        Assert.Contains("comprehensive task management", response.RefinedContent);
+        Assert.Equal(1, response.IterationCount);
+
+        // Verify service was called with all options
+        serviceMock.Verify(s => s.RefinePromptAsync(
+            It.Is<RefinePromptRequest>(r =>
+                r.Content == "Build a task management app" &&
+                r.Context == "Web application for small teams" &&
+                r.RefinementFocus == "detail"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task PromptRefinement_WithShortContent_ReturnsExpandedContent()
+    {
+        // Arrange
+        var serviceMock = new Mock<IPromptRefinementService>();
+        var loggerMock = new Mock<ILogger<Controllers.PromptRefinementController>>();
+        var controller = new Controllers.PromptRefinementController(serviceMock.Object, loggerMock.Object);
+
+        var request = new RefinePromptRequest { Content = "Make a todo app" };
+
+        serviceMock.Setup(s => s.RefinePromptAsync(It.IsAny<RefinePromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RefinePromptResponse
+            {
+                Success = true,
+                OriginalContent = "Make a todo app",
+                RefinedContent = "You are an AI assistant helping to create a todo list application with CRUD operations, categorization, due dates, and a clean user interface.",
+                IterationCount = 1
+            });
+
+        // Act
+        var result = await controller.RefinePrompt(request, _ct);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<RefinePromptResponse>(okResult.Value);
+        Assert.True(response.Success);
+        Assert.True(response.RefinedContent.Length > response.OriginalContent.Length);
+    }
+
+    [Fact]
+    public async Task PromptRefinement_WithLongContent_HandlesLargeInput()
+    {
+        // Arrange
+        var serviceMock = new Mock<IPromptRefinementService>();
+        var loggerMock = new Mock<ILogger<Controllers.PromptRefinementController>>();
+        var controller = new Controllers.PromptRefinementController(serviceMock.Object, loggerMock.Object);
+
+        var longContent = string.Join(" ", Enumerable.Repeat("Build a comprehensive enterprise resource planning system with modules for finance, HR, inventory, and sales.", 10));
+        var request = new RefinePromptRequest { Content = longContent };
+
+        serviceMock.Setup(s => s.RefinePromptAsync(It.IsAny<RefinePromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RefinePromptResponse
+            {
+                Success = true,
+                OriginalContent = longContent,
+                RefinedContent = "You are an AI assistant helping to build a comprehensive enterprise resource planning (ERP) system...",
+                IterationCount = 1
+            });
+
+        // Act
+        var result = await controller.RefinePrompt(request, _ct);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<RefinePromptResponse>(okResult.Value);
+        Assert.True(response.Success);
+    }
+
+    [Fact]
+    public async Task PromptRefinement_WithEmptyContent_ReturnsBadRequest()
+    {
+        // Arrange
+        var serviceMock = new Mock<IPromptRefinementService>();
+        var loggerMock = new Mock<ILogger<Controllers.PromptRefinementController>>();
+        var controller = new Controllers.PromptRefinementController(serviceMock.Object, loggerMock.Object);
+
+        var request = new RefinePromptRequest { Content = "" };
+
+        // Act
+        var result = await controller.RefinePrompt(request, _ct);
+
+        // Assert
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        serviceMock.Verify(s => s.RefinePromptAsync(It.IsAny<RefinePromptRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PromptRefinement_WhenClientNotConnected_Returns503()
+    {
+        // Arrange
+        var serviceMock = new Mock<IPromptRefinementService>();
+        var loggerMock = new Mock<ILogger<Controllers.PromptRefinementController>>();
+        var controller = new Controllers.PromptRefinementController(serviceMock.Object, loggerMock.Object);
+
+        var request = new RefinePromptRequest { Content = "Build something" };
+
+        serviceMock.Setup(s => s.RefinePromptAsync(It.IsAny<RefinePromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RefinePromptResponse
+            {
+                Success = false,
+                OriginalContent = "Build something",
+                ErrorMessage = "Copilot client is not connected. Please start the client first."
+            });
+
+        // Act
+        var result = await controller.RefinePrompt(request, _ct);
+
+        // Assert
+        var statusResult = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(503, statusResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task PromptRefinement_WithCancellation_HandlesGracefully()
+    {
+        // Arrange
+        var serviceMock = new Mock<IPromptRefinementService>();
+        var loggerMock = new Mock<ILogger<Controllers.PromptRefinementController>>();
+        var controller = new Controllers.PromptRefinementController(serviceMock.Object, loggerMock.Object);
+
+        var cts = new CancellationTokenSource();
+        var request = new RefinePromptRequest { Content = "Build something" };
+
+        serviceMock.Setup(s => s.RefinePromptAsync(It.IsAny<RefinePromptRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        cts.Cancel();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            controller.RefinePrompt(request, cts.Token));
+    }
+
+    [Fact]
+    public async Task PromptRefinement_WithAllRefinementFocusOptions_PassesCorrectly()
+    {
+        // Arrange
+        var serviceMock = new Mock<IPromptRefinementService>();
+        var loggerMock = new Mock<ILogger<Controllers.PromptRefinementController>>();
+        var controller = new Controllers.PromptRefinementController(serviceMock.Object, loggerMock.Object);
+
+        var focusOptions = new[] { "clarity", "detail", "constraints", "all" };
+
+        foreach (var focus in focusOptions)
+        {
+            var request = new RefinePromptRequest
+            {
+                Content = "Build an app",
+                RefinementFocus = focus
+            };
+
+            serviceMock.Setup(s => s.RefinePromptAsync(It.IsAny<RefinePromptRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new RefinePromptResponse { Success = true, RefinedContent = "Refined", IterationCount = 1 });
+
+            // Act
+            var result = await controller.RefinePrompt(request, _ct);
+
+            // Assert
+            Assert.IsType<OkObjectResult>(result.Result);
+        }
+    }
+
+    [Fact]
+    public async Task PromptRefinement_WithInvalidFocus_ReturnsBadRequest()
+    {
+        // Arrange
+        var serviceMock = new Mock<IPromptRefinementService>();
+        var loggerMock = new Mock<ILogger<Controllers.PromptRefinementController>>();
+        var controller = new Controllers.PromptRefinementController(serviceMock.Object, loggerMock.Object);
+
+        var request = new RefinePromptRequest
+        {
+            Content = "Build an app",
+            RefinementFocus = "invalid_focus"
+        };
+
+        // Act
+        var result = await controller.RefinePrompt(request, _ct);
+
+        // Assert
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task PromptRefinement_MultipleIterations_TracksIterationCount()
+    {
+        // Arrange
+        var serviceMock = new Mock<IPromptRefinementService>();
+        var loggerMock = new Mock<ILogger<Controllers.PromptRefinementController>>();
+        var controller = new Controllers.PromptRefinementController(serviceMock.Object, loggerMock.Object);
+
+        var request = new RefinePromptRequest { Content = "Build an app" };
+        var iterationCount = 0;
+
+        serviceMock.Setup(s => s.RefinePromptAsync(It.IsAny<RefinePromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new RefinePromptResponse
+            {
+                Success = true,
+                OriginalContent = request.Content,
+                RefinedContent = $"Refined content iteration {++iterationCount}",
+                IterationCount = iterationCount
+            });
+
+        // Act - Simulate multiple refinement iterations
+        for (int i = 1; i <= 3; i++)
+        {
+            var result = await controller.RefinePrompt(request, _ct);
+            var okResult = Assert.IsType<OkObjectResult>(result.Result);
+            var response = Assert.IsType<RefinePromptResponse>(okResult.Value);
+            Assert.Equal(i, response.IterationCount);
+        }
+    }
+
+    #endregion
 }

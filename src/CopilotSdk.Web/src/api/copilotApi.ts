@@ -16,6 +16,8 @@ import {
   SendMessageRequest,
   SendMessageResponse,
   MessagesResponse,
+  RefinePromptRequest,
+  RefinePromptResponse,
 } from '../types';
 
 /**
@@ -257,6 +259,28 @@ export async function abortSession(sessionId: string): Promise<void> {
   try {
     await apiClient.post(`/sessions/${encodeURIComponent(sessionId)}/abort`);
   } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+// #endregion
+
+// #region Prompt Refinement Operations
+
+/**
+ * Refine a system message prompt using the Copilot LLM.
+ * Sends the content to be expanded and improved as a clearer requirements statement.
+ * @param request The refinement request containing the content to refine.
+ * @returns The refinement response with the improved content.
+ */
+export async function refineSystemMessage(request: RefinePromptRequest): Promise<RefinePromptResponse> {
+  try {
+    console.log('[copilotApi] refineSystemMessage - sending request...');
+    const response = await apiClient.post<RefinePromptResponse>('/refine-prompt', request);
+    console.log('[copilotApi] refineSystemMessage - response received:', response.status);
+    return response.data;
+  } catch (error) {
+    console.error('[copilotApi] refineSystemMessage - error:', error);
     throw new Error(extractErrorMessage(error));
   }
 }

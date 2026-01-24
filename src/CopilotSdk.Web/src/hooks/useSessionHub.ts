@@ -117,8 +117,10 @@ export function useSessionHub(options: UseSessionHubOptions = {}): UseSessionHub
     // Handle connection state changes
     connection.onreconnecting((error) => {
       updateConnectionState('Reconnecting');
+      // Don't propagate reconnecting as an error - it's a transient state
+      // The connectionState change already indicates the issue
       if (error) {
-        handleError(new Error(`Connection lost: ${error.message}`));
+        console.warn('SignalR connection lost, attempting to reconnect:', error.message);
       }
     });
 
@@ -138,8 +140,10 @@ export function useSessionHub(options: UseSessionHubOptions = {}): UseSessionHub
 
     connection.onclose((error) => {
       updateConnectionState('Disconnected');
+      // Don't propagate close as an error if automatic reconnection will handle it
+      // or if the connection was closed gracefully
       if (error) {
-        handleError(new Error(`Connection closed: ${error.message}`));
+        console.warn('SignalR connection closed:', error.message);
       }
     });
 
@@ -168,11 +172,13 @@ export function useSessionHub(options: UseSessionHubOptions = {}): UseSessionHub
       updateConnectionState('Connected');
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to connect');
-      handleError(error);
+      // Log the error but don't propagate it as a user-facing error
+      // The disconnected state in connectionState is sufficient feedback
+      console.warn('SignalR connection failed:', error.message);
       updateConnectionState('Disconnected');
-      throw error;
+      // Don't throw - let automatic reconnection handle it
     }
-  }, [createConnection, updateConnectionState, handleError]);
+  }, [createConnection, updateConnectionState]);
 
   // Disconnect from the hub
   const disconnect = useCallback(async () => {

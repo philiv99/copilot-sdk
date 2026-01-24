@@ -109,12 +109,108 @@
   gap: 0.5rem;
 }
 
+.text-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .text-label {
   font-size: 0.75rem;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #9ca3af;
+}
+
+/* Text actions container */
+.text-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Undo button */
+.undo-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.625rem;
+  background-color: transparent;
+  border: 1px solid #404040;
+  border-radius: 0.375rem;
+  color: #9ca3af;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.undo-button:hover {
+  background-color: #333;
+  border-color: #555;
+  color: #e5e7eb;
+}
+
+.undo-button:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.undo-icon {
+  flex-shrink: 0;
+}
+
+.undo-button-text {
+  white-space: nowrap;
+}
+
+/* Cancel button */
+.cancel-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.625rem;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.375rem;
+  color: #ef4444;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cancel-button:hover {
+  background-color: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.cancel-button:focus {
+  outline: none;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+
+.cancel-icon {
+  flex-shrink: 0;
+}
+
+.cancel-button-text {
+  white-space: nowrap;
+}
+
+/* Textarea wrapper for overlay */
+.textarea-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.textarea-wrapper.refining .system-message-textarea {
+  opacity: 0.5;
+  background-color: #1a1a1a;
 }
 
 .system-message-textarea {
@@ -129,7 +225,7 @@
   line-height: 1.5;
   resize: vertical;
   min-height: 100px;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, opacity 0.15s;
 }
 
 .system-message-textarea:hover:not(:disabled) {
@@ -151,8 +247,119 @@
   color: #6b7280;
 }
 
-.char-count {
+/* Refining overlay */
+.refining-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+  background-color: rgba(37, 99, 235, 0.9);
+  border-radius: 0.5rem;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.refining-text {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Error display */
+.refine-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.375rem;
+  color: #ef4444;
+  font-size: 0.75rem;
+}
+
+.error-icon {
+  flex-shrink: 0;
+  font-size: 0.875rem;
+}
+
+.error-text {
+  flex: 1;
+}
+
+.error-dismiss {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0.25rem;
+  color: #ef4444;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.error-dismiss:hover {
+  background-color: rgba(239, 68, 68, 0.2);
+}
+
+/* Character count row */
+.char-count-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   align-self: flex-end;
+}
+
+.char-count {
   font-size: 0.75rem;
   color: #6b7280;
+}
+
+.char-count-change {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.char-count-change.positive {
+  color: #22c55e;
+}
+
+.char-count-change.negative {
+  color: #ef4444;
+}
+
+/* Screen reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }

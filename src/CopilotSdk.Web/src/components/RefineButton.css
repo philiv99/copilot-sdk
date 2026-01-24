@@ -1,0 +1,79 @@
+/**
+ * Styles for the RefineButton component.
+ */
+
+.refine-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  background-color: #2563eb;
+  border: 1px solid #3b82f6;
+  border-radius: 0.375rem;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.refine-button:hover:not(:disabled) {
+  background-color: #1d4ed8;
+  border-color: #2563eb;
+}
+
+.refine-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+}
+
+.refine-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.refine-button.refining {
+  background-color: #1e40af;
+  border-color: #1e40af;
+}
+
+/* Icon styling */
+.refine-button-icon {
+  flex-shrink: 0;
+}
+
+/* Spinner animation */
+.refine-button-spinner {
+  flex-shrink: 0;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Button text */
+.refine-button-text {
+  line-height: 1;
+}
+
+/* Iteration count badge */
+.refine-button-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.25rem;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #fff;
+}

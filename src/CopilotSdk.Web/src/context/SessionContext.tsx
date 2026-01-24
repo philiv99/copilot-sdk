@@ -251,9 +251,11 @@ export function SessionProvider({ children, autoConnectHub = true }: SessionProv
     dispatch({ type: 'SET_HUB_CONNECTION_STATE', payload: hubState });
   }, []);
 
-  // Handle hub errors
+  // Handle hub errors - log but don't set as main error to avoid UI disruption
   const handleHubError = useCallback((error: Error) => {
-    dispatch({ type: 'FETCH_ERROR', payload: error.message });
+    // Only log hub errors - the connection state change is enough to indicate issues
+    // This prevents SignalR reconnection errors from disrupting the main UI
+    console.warn('SignalR hub error:', error.message);
   }, []);
 
   // Initialize SignalR hub

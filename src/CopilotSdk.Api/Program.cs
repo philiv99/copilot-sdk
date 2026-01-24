@@ -71,6 +71,7 @@ builder.Services.AddSingleton<SessionEventDispatcher>(sp =>
 builder.Services.AddSingleton<IToolExecutionService, ToolExecutionService>();
 builder.Services.AddScoped<ICopilotClientService, CopilotClientService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
+builder.Services.AddScoped<IPromptRefinementService, PromptRefinementService>();
 
 // Register hosted service for automatic client startup/shutdown
 builder.Services.AddHostedService<CopilotClientHostedService>();
@@ -93,6 +94,9 @@ if (app.Environment.IsDevelopment())
 
 // Use error handling middleware
 app.UseErrorHandling();
+
+// Use rate limiting middleware for prompt refinement endpoint
+app.UseRateLimiting();
 
 // Only use HTTPS redirection in production
 if (!app.Environment.IsDevelopment())
