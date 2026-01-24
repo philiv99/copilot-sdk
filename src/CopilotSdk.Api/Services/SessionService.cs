@@ -118,13 +118,8 @@ public class SessionService : ISessionService
     {
         _logger.LogInformation("Listing all sessions");
 
-        // Get sessions from the SDK
-        var sdkSessions = await _clientManager.ListSessionsAsync(cancellationToken);
-
-        // Sync with persistence (persists any SDK sessions not in files)
-        await _sessionManager.SyncFromSdkSessionListAsync(sdkSessions, cancellationToken);
-
         // Get all metadata from persistence (file system is the source of truth)
+        // We do NOT sync from SDK - if user deleted session files, they stay deleted
         var allMetadata = await _sessionManager.GetAllMetadataAsync(cancellationToken);
 
         var sessions = allMetadata.Select(meta => new SessionInfoResponse
