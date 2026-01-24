@@ -57,10 +57,10 @@ public class SessionService : ISessionService
 
         var session = await _clientManager.CreateSessionAsync(config, tools, cancellationToken);
 
-        // Register the session in the SessionManager
-        _sessionManager.RegisterSession(session.SessionId, session, config);
+        // Register the session in the SessionManager (persists to disk)
+        await _sessionManager.RegisterSessionAsync(session.SessionId, session, config, cancellationToken);
 
-        var metadata = _sessionManager.GetMetadata(session.SessionId);
+        var metadata = await _sessionManager.GetMetadataAsync(session.SessionId, cancellationToken);
 
         return new SessionInfoResponse
         {
@@ -95,10 +95,10 @@ public class SessionService : ISessionService
             tools,
             cancellationToken);
 
-        // Update the session in the SessionManager
-        _sessionManager.UpdateResumedSession(session.SessionId, session);
+        // Update the session in the SessionManager (persists to disk)
+        await _sessionManager.UpdateResumedSessionAsync(session.SessionId, session, cancellationToken);
 
-        var metadata = _sessionManager.GetMetadata(session.SessionId);
+        var metadata = await _sessionManager.GetMetadataAsync(session.SessionId, cancellationToken);
 
         return new SessionInfoResponse
         {
@@ -121,11 +121,11 @@ public class SessionService : ISessionService
         // Get sessions from the SDK
         var sdkSessions = await _clientManager.ListSessionsAsync(cancellationToken);
 
-        // Sync with local tracking
-        _sessionManager.SyncFromSdkSessionList(sdkSessions);
+        // Sync with persistence (persists any SDK sessions not in files)
+        await _sessionManager.SyncFromSdkSessionListAsync(sdkSessions, cancellationToken);
 
-        // Get all metadata from the session manager
-        var allMetadata = _sessionManager.GetAllMetadata();
+        // Get all metadata from persistence (file system is the source of truth)
+        var allMetadata = await _sessionManager.GetAllMetadataAsync(cancellationToken);
 
         var sessions = allMetadata.Select(meta => new SessionInfoResponse
         {
@@ -134,7 +134,7 @@ public class SessionService : ISessionService
             Streaming = meta.Config?.Streaming ?? false,
             CreatedAt = meta.CreatedAt ?? DateTime.MinValue,
             LastActivityAt = meta.LastActivityAt,
-            Status = _sessionManager.SessionExists(meta.SessionId) ? "Active" : "Inactive",
+            Status = _sessionManager.IsSessionActive(meta.SessionId) ? "Active" : "Inactive",
             MessageCount = meta.MessageCount,
             Summary = meta.Summary
         }).ToList();
@@ -151,8 +151,8 @@ public class SessionService : ISessionService
     {
         _logger.LogInformation("Getting session {SessionId}", sessionId);
 
-        // First check local tracking
-        var metadata = _sessionManager.GetMetadata(sessionId);
+        // First check persistence (source of truth)
+        var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
 
         if (metadata == null)
         {
@@ -165,7 +165,7 @@ public class SessionService : ISessionService
                 return null;
             }
 
-            // Found in SDK but not locally tracked
+            // Found in SDK but not in persistence
             return new SessionInfoResponse
             {
                 SessionId = sdkSession.SessionId,
@@ -186,7 +186,7 @@ public class SessionService : ISessionService
             Streaming = metadata.Config?.Streaming ?? false,
             CreatedAt = metadata.CreatedAt ?? DateTime.MinValue,
             LastActivityAt = metadata.LastActivityAt,
-            Status = _sessionManager.SessionExists(sessionId) ? "Active" : "Inactive",
+            Status = _sessionManager.IsSessionActive(sessionId) ? "Active" : "Inactive",
             MessageCount = metadata.MessageCount,
             Summary = metadata.Summary
         };
@@ -202,8 +202,8 @@ public class SessionService : ISessionService
             // Delete from SDK
             await _clientManager.DeleteSessionAsync(sessionId, cancellationToken);
 
-            // Remove from local tracking
-            _sessionManager.RemoveSession(sessionId);
+            // Remove from persistence and active tracking
+            await _sessionManager.RemoveSessionAsync(sessionId, cancellationToken);
 
             return true;
         }
@@ -211,8 +211,8 @@ public class SessionService : ISessionService
         {
             _logger.LogWarning("Session {SessionId} not found in SDK: {Message}", sessionId, ex.Message);
 
-            // Still try to remove from local tracking
-            return _sessionManager.RemoveSession(sessionId);
+            // Still try to remove from persistence
+            return await _sessionManager.RemoveSessionAsync(sessionId, cancellationToken);
         }
     }
 
@@ -258,8 +258,8 @@ public class SessionService : ISessionService
 
             var messageId = await session.SendAsync(messageOptions, cancellationToken);
 
-            // Update session metadata
-            _sessionManager.IncrementMessageCount(sessionId);
+            // Update session metadata in persistence
+            await _sessionManager.IncrementMessageCountAsync(sessionId, cancellationToken);
 
             // Persist the user message
             var persistedMessage = new PersistedMessage
@@ -433,7 +433,7 @@ public class SessionService : ISessionService
         try
         {
             await session.AbortAsync(cancellationToken);
-            _sessionManager.UpdateLastActivity(sessionId);
+            await _sessionManager.UpdateLastActivityAsync(sessionId, cancellationToken);
             return true;
         }
         catch (Exception ex)
@@ -449,7 +449,7 @@ public class SessionService : ISessionService
         _logger.LogInformation("Getting persisted history for session {SessionId}", sessionId);
 
         var messages = await _sessionManager.GetPersistedMessagesAsync(sessionId, cancellationToken);
-        var metadata = _sessionManager.GetMetadata(sessionId);
+        var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
 
         return new PersistedMessagesResponse
         {

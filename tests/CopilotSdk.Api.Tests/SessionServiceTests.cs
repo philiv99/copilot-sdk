@@ -17,13 +17,15 @@ namespace CopilotSdk.Api.Tests;
 public class SessionServiceTests
 {
     private readonly Mock<ILogger<SessionManager>> _sessionManagerLoggerMock;
+    private readonly Mock<IPersistenceService> _persistenceServiceMock;
     private readonly SessionManager _sessionManager;
     private readonly Mock<ILogger<SessionService>> _serviceLoggerMock;
 
     public SessionServiceTests()
     {
         _sessionManagerLoggerMock = new Mock<ILogger<SessionManager>>();
-        _sessionManager = new SessionManager(_sessionManagerLoggerMock.Object);
+        _persistenceServiceMock = new Mock<IPersistenceService>();
+        _sessionManager = new SessionManager(_sessionManagerLoggerMock.Object, _persistenceServiceMock.Object);
         _serviceLoggerMock = new Mock<ILogger<SessionService>>();
     }
 
@@ -211,7 +213,7 @@ public class SessionServiceTests
     #region SessionManager Integration Tests
 
     [Fact]
-    public void SessionManager_CanRegisterAndRetrieveSession()
+    public async Task SessionManager_CanRegisterAndRetrieveSessionAsync()
     {
         // Arrange
         var sessionId = "test-session";
@@ -221,9 +223,20 @@ public class SessionServiceTests
             Streaming = true
         };
 
+        _persistenceServiceMock
+            .Setup(p => p.SaveSessionAsync(It.IsAny<PersistedSessionData>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _persistenceServiceMock
+            .Setup(p => p.LoadSessionAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PersistedSessionData
+            {
+                SessionId = sessionId,
+                Config = new PersistedSessionConfig { Model = "gpt-4", Streaming = true }
+            });
+
         // Act
-        _sessionManager.RegisterSession(sessionId, null!, config);
-        var metadata = _sessionManager.GetMetadata(sessionId);
+        await _sessionManager.RegisterSessionAsync(sessionId, null!, config);
+        var metadata = await _sessionManager.GetMetadataAsync(sessionId);
 
         // Assert
         Assert.NotNull(metadata);
@@ -233,58 +246,80 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public void SessionManager_TracksMessageCount()
+    public async Task SessionManager_TracksMessageCountAsync()
     {
         // Arrange
         var sessionId = "test-session";
-        var config = new SessionConfig { Model = "gpt-4" };
-        _sessionManager.RegisterSession(sessionId, null!, config);
+        var persistedData = new PersistedSessionData
+        {
+            SessionId = sessionId,
+            MessageCount = 0
+        };
+        var messageCount = 0;
+
+        _persistenceServiceMock
+            .Setup(p => p.LoadSessionAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new PersistedSessionData { SessionId = sessionId, MessageCount = messageCount });
+        _persistenceServiceMock
+            .Setup(p => p.SaveSessionAsync(It.IsAny<PersistedSessionData>(), It.IsAny<CancellationToken>()))
+            .Callback<PersistedSessionData, CancellationToken>((data, _) => messageCount = data.MessageCount)
+            .Returns(Task.CompletedTask);
 
         // Act
-        _sessionManager.IncrementMessageCount(sessionId);
-        _sessionManager.IncrementMessageCount(sessionId);
-        var metadata = _sessionManager.GetMetadata(sessionId);
+        await _sessionManager.IncrementMessageCountAsync(sessionId);
+        await _sessionManager.IncrementMessageCountAsync(sessionId);
 
         // Assert
-        Assert.Equal(2, metadata?.MessageCount);
+        Assert.Equal(2, messageCount);
     }
 
     [Fact]
-    public void SessionManager_UpdatesLastActivity()
+    public async Task SessionManager_UpdatesLastActivityAsync()
     {
         // Arrange
         var sessionId = "test-session";
-        var config = new SessionConfig { Model = "gpt-4" };
-        _sessionManager.RegisterSession(sessionId, null!, config);
-        var initialTime = _sessionManager.GetMetadata(sessionId)?.LastActivityAt;
+        var initialTime = DateTime.UtcNow.AddMinutes(-10);
+        DateTime? lastSavedTime = null;
 
-        // Wait to ensure time difference
-        Thread.Sleep(50);
+        _persistenceServiceMock
+            .Setup(p => p.LoadSessionAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PersistedSessionData { SessionId = sessionId, LastActivityAt = initialTime });
+        _persistenceServiceMock
+            .Setup(p => p.SaveSessionAsync(It.IsAny<PersistedSessionData>(), It.IsAny<CancellationToken>()))
+            .Callback<PersistedSessionData, CancellationToken>((data, _) => lastSavedTime = data.LastActivityAt)
+            .Returns(Task.CompletedTask);
 
         // Act
-        _sessionManager.UpdateLastActivity(sessionId);
-        var updatedTime = _sessionManager.GetMetadata(sessionId)?.LastActivityAt;
+        await _sessionManager.UpdateLastActivityAsync(sessionId);
 
         // Assert
-        Assert.True(updatedTime > initialTime);
+        Assert.NotNull(lastSavedTime);
+        Assert.True(lastSavedTime > initialTime);
     }
 
     [Fact]
-    public void SessionManager_RemoveSession_CleansUpProperly()
+    public async Task SessionManager_RemoveSessionAsync_CleansUpProperly()
     {
         // Arrange
         var sessionId = "test-session";
         var config = new SessionConfig { Model = "gpt-4" };
-        _sessionManager.RegisterSession(sessionId, null!, config);
+
+        _persistenceServiceMock
+            .Setup(p => p.SaveSessionAsync(It.IsAny<PersistedSessionData>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _persistenceServiceMock
+            .Setup(p => p.DeleteSessionAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _sessionManager.RegisterSessionAsync(sessionId, null!, config);
 
         // Act
-        var removed = _sessionManager.RemoveSession(sessionId);
+        var removed = await _sessionManager.RemoveSessionAsync(sessionId);
 
         // Assert
         Assert.True(removed);
-        Assert.Null(_sessionManager.GetMetadata(sessionId));
         Assert.Null(_sessionManager.GetSession(sessionId));
-        Assert.False(_sessionManager.SessionExists(sessionId));
+        Assert.False(_sessionManager.IsSessionActive(sessionId));
     }
 
     #endregion

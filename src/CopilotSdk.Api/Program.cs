@@ -134,15 +134,6 @@ static async Task LoadPersistedDataAsync(IServiceProvider services)
         logger.LogWarning(ex, "Failed to load persisted client configuration, using defaults");
     }
 
-    try
-    {
-        // Load persisted sessions
-        var sessionManager = services.GetRequiredService<SessionManager>();
-        await sessionManager.LoadPersistedSessionsAsync();
-        logger.LogInformation("Loaded persisted sessions");
-    }
-    catch (Exception ex)
-    {
-        logger.LogWarning(ex, "Failed to load persisted sessions");
-    }
+    // Sessions are no longer cached in memory - they are read from persistence on demand
+    logger.LogInformation("Session persistence is file-based only (no in-memory caching)");
 }

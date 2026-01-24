@@ -9,13 +9,14 @@ namespace CopilotSdk.Api.Managers;
 
 /// <summary>
 /// Manages active sessions and their metadata.
-/// Tracks session state independently of the SDK's session tracking.
+/// Session metadata is persisted to disk only - no in-memory caching.
+/// Active SDK session objects are tracked in memory as they are runtime objects.
 /// </summary>
 public class SessionManager
 {
     private readonly ILogger<SessionManager> _logger;
     private readonly IPersistenceService? _persistenceService;
-    private readonly ConcurrentDictionary<string, Models.Domain.SessionMetadata> _sessionMetadata = new();
+    // Only track active SDK session objects (runtime) - not metadata
     private readonly ConcurrentDictionary<string, CopilotSession> _activeSessions = new();
     private readonly ConcurrentDictionary<string, IDisposable> _eventSubscriptions = new();
     private SessionEventDispatcher? _eventDispatcher;
@@ -38,11 +39,12 @@ public class SessionManager
 
     /// <summary>
     /// Registers a newly created session with its metadata.
+    /// The metadata is persisted to disk immediately - no in-memory caching.
     /// </summary>
     /// <param name="sessionId">The session ID.</param>
     /// <param name="session">The SDK session instance.</param>
     /// <param name="config">The configuration used to create the session.</param>
-    public void RegisterSession(string sessionId, CopilotSession session, Models.Domain.SessionConfig config)
+    public async Task RegisterSessionAsync(string sessionId, CopilotSession session, Models.Domain.SessionConfig config, CancellationToken cancellationToken = default)
     {
         var metadata = new Models.Domain.SessionMetadata
         {
@@ -53,19 +55,14 @@ public class SessionManager
             Config = config
         };
 
-        if (!_sessionMetadata.TryAdd(sessionId, metadata))
-        {
-            _logger.LogWarning("Session {SessionId} metadata already exists, updating", sessionId);
-            _sessionMetadata[sessionId] = metadata;
-        }
-
+        // Track the active SDK session object
         _activeSessions[sessionId] = session;
 
         // Set up event handler if dispatcher is available
         SetupEventHandler(sessionId, session);
 
-        // Persist the session asynchronously
-        _ = PersistSessionAsync(sessionId, metadata);
+        // Persist the session to disk (this is the only storage)
+        await PersistSessionAsync(sessionId, metadata, cancellationToken);
 
         _logger.LogInformation("Registered session {SessionId}", sessionId);
     }
@@ -102,14 +99,13 @@ public class SessionManager
     /// </summary>
     /// <param name="sessionId">The session ID.</param>
     /// <param name="session">The SDK session instance.</param>
-    public void UpdateResumedSession(string sessionId, CopilotSession session)
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task UpdateResumedSessionAsync(string sessionId, CopilotSession session, CancellationToken cancellationToken = default)
     {
         _activeSessions[sessionId] = session;
 
-        if (_sessionMetadata.TryGetValue(sessionId, out var metadata))
-        {
-            metadata.LastActivityAt = DateTime.UtcNow;
-        }
+        // Update last activity in persisted data
+        await UpdateLastActivityAsync(sessionId, cancellationToken);
 
         // Set up event handler if dispatcher is available
         SetupEventHandler(sessionId, session);
@@ -129,31 +125,52 @@ public class SessionManager
     }
 
     /// <summary>
-    /// Gets session metadata by ID.
+    /// Gets session metadata by ID from persistence.
     /// </summary>
     /// <param name="sessionId">The session ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The metadata if found, otherwise null.</returns>
-    public Models.Domain.SessionMetadata? GetMetadata(string sessionId)
+    public async Task<Models.Domain.SessionMetadata?> GetMetadataAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        _sessionMetadata.TryGetValue(sessionId, out var metadata);
-        return metadata;
+        if (_persistenceService == null)
+        {
+            _logger.LogWarning("No persistence service available, cannot get metadata for session {SessionId}", sessionId);
+            return null;
+        }
+
+        var sessionData = await _persistenceService.LoadSessionAsync(sessionId, cancellationToken);
+        if (sessionData == null)
+        {
+            return null;
+        }
+
+        return ConvertToMetadata(sessionData);
     }
 
     /// <summary>
-    /// Gets all tracked session metadata.
+    /// Gets all session metadata from persistence.
     /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of all session metadata.</returns>
-    public List<Models.Domain.SessionMetadata> GetAllMetadata()
+    public async Task<List<Models.Domain.SessionMetadata>> GetAllMetadataAsync(CancellationToken cancellationToken = default)
     {
-        return _sessionMetadata.Values.ToList();
+        if (_persistenceService == null)
+        {
+            _logger.LogWarning("No persistence service available, cannot get all metadata");
+            return new List<Models.Domain.SessionMetadata>();
+        }
+
+        var persistedSessions = await _persistenceService.LoadAllSessionsAsync(cancellationToken);
+        return persistedSessions.Select(ConvertToMetadata).ToList();
     }
 
     /// <summary>
-    /// Removes a session from tracking.
+    /// Removes a session from tracking and persistence.
     /// </summary>
     /// <param name="sessionId">The session ID to remove.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if the session was removed, false if it wasn't found.</returns>
-    public bool RemoveSession(string sessionId)
+    public async Task<bool> RemoveSessionAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         // Clean up event subscription
         if (_eventSubscriptions.TryRemove(sessionId, out var subscription))
@@ -162,76 +179,124 @@ public class SessionManager
             _logger.LogDebug("Disposed event subscription for session {SessionId}", sessionId);
         }
 
-        var removed = _sessionMetadata.TryRemove(sessionId, out _);
+        // Remove from active sessions
         _activeSessions.TryRemove(sessionId, out _);
 
-        if (removed)
+        // Delete the persisted session file (this is the source of truth)
+        var deleted = await DeletePersistedSessionAsync(sessionId, cancellationToken);
+        
+        if (deleted)
         {
-            // Delete the persisted session file
-            _ = DeletePersistedSessionAsync(sessionId);
             _logger.LogInformation("Removed session {SessionId}", sessionId);
         }
 
-        return removed;
+        return deleted;
     }
 
     /// <summary>
-    /// Updates the last activity time for a session.
+    /// Updates the last activity time for a session in persistence.
     /// </summary>
     /// <param name="sessionId">The session ID.</param>
-    public void UpdateLastActivity(string sessionId)
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task UpdateLastActivityAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        if (_sessionMetadata.TryGetValue(sessionId, out var metadata))
+        if (_persistenceService == null) return;
+
+        try
         {
-            metadata.LastActivityAt = DateTime.UtcNow;
+            var sessionData = await _persistenceService.LoadSessionAsync(sessionId, cancellationToken);
+            if (sessionData != null)
+            {
+                sessionData.LastActivityAt = DateTime.UtcNow;
+                await _persistenceService.SaveSessionAsync(sessionData, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to update last activity for session {SessionId}", sessionId);
         }
     }
 
     /// <summary>
-    /// Increments the message count for a session.
+    /// Increments the message count for a session in persistence.
     /// </summary>
     /// <param name="sessionId">The session ID.</param>
-    public void IncrementMessageCount(string sessionId)
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task IncrementMessageCountAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        if (_sessionMetadata.TryGetValue(sessionId, out var metadata))
+        if (_persistenceService == null) return;
+
+        try
         {
-            metadata.MessageCount++;
-            metadata.LastActivityAt = DateTime.UtcNow;
+            var sessionData = await _persistenceService.LoadSessionAsync(sessionId, cancellationToken);
+            if (sessionData != null)
+            {
+                sessionData.MessageCount++;
+                sessionData.LastActivityAt = DateTime.UtcNow;
+                await _persistenceService.SaveSessionAsync(sessionData, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to increment message count for session {SessionId}", sessionId);
         }
     }
 
     /// <summary>
-    /// Updates the summary for a session.
+    /// Updates the summary for a session in persistence.
     /// </summary>
     /// <param name="sessionId">The session ID.</param>
     /// <param name="summary">The new summary.</param>
-    public void UpdateSummary(string sessionId, string summary)
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task UpdateSummaryAsync(string sessionId, string summary, CancellationToken cancellationToken = default)
     {
-        if (_sessionMetadata.TryGetValue(sessionId, out var metadata))
+        if (_persistenceService == null) return;
+
+        try
         {
-            metadata.Summary = summary;
+            var sessionData = await _persistenceService.LoadSessionAsync(sessionId, cancellationToken);
+            if (sessionData != null)
+            {
+                sessionData.Summary = summary;
+                await _persistenceService.SaveSessionAsync(sessionData, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to update summary for session {SessionId}", sessionId);
         }
     }
 
     /// <summary>
-    /// Checks if a session exists in tracking.
+    /// Checks if a session is currently active (has a running SDK session object).
     /// </summary>
     /// <param name="sessionId">The session ID.</param>
-    /// <returns>True if the session exists, false otherwise.</returns>
-    public bool SessionExists(string sessionId)
+    /// <returns>True if the session has an active SDK session, false otherwise.</returns>
+    public bool IsSessionActive(string sessionId)
     {
         return _activeSessions.ContainsKey(sessionId);
     }
 
     /// <summary>
-    /// Gets the count of tracked sessions.
+    /// Checks if a session exists in persistence.
     /// </summary>
-    public int SessionCount => _activeSessions.Count;
+    /// <param name="sessionId">The session ID.</param>
+    /// <returns>True if the session exists in persistence, false otherwise.</returns>
+    public bool SessionExistsInPersistence(string sessionId)
+    {
+        return _persistenceService?.SessionExists(sessionId) ?? false;
+    }
 
     /// <summary>
-    /// Clears all tracked sessions.
+    /// Gets the count of active session objects.
     /// </summary>
-    public void ClearAll()
+    public int ActiveSessionCount => _activeSessions.Count;
+
+    /// <summary>
+    /// Clears all active sessions (runtime objects only).
+    /// Does not clear persisted session data.
+    /// </summary>
+    public void ClearActiveSessions()
     {
         // Dispose all event subscriptions
         foreach (var subscription in _eventSubscriptions.Values)
@@ -240,33 +305,36 @@ public class SessionManager
         }
         _eventSubscriptions.Clear();
 
-        _sessionMetadata.Clear();
         _activeSessions.Clear();
-        _logger.LogInformation("Cleared all session tracking data");
+        _logger.LogInformation("Cleared all active session objects");
     }
 
     /// <summary>
-    /// Syncs local tracking with SDK session list.
-    /// Adds metadata for sessions that exist in SDK but not locally tracked.
+    /// Syncs SDK session list with persisted data.
+    /// Persists sessions from SDK that don't exist in persistence.
     /// </summary>
     /// <param name="sdkSessions">List of sessions from the SDK.</param>
-    public void SyncFromSdkSessionList(List<SdkSessionMetadata> sdkSessions)
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task SyncFromSdkSessionListAsync(List<SdkSessionMetadata> sdkSessions, CancellationToken cancellationToken = default)
     {
+        if (_persistenceService == null) return;
+
         foreach (var sdkSession in sdkSessions)
         {
-            if (!_sessionMetadata.ContainsKey(sdkSession.SessionId))
+            if (!_persistenceService.SessionExists(sdkSession.SessionId))
             {
-                var metadata = new Models.Domain.SessionMetadata
+                var sessionData = new PersistedSessionData
                 {
                     SessionId = sdkSession.SessionId,
                     CreatedAt = sdkSession.StartTime,
                     LastActivityAt = sdkSession.ModifiedTime,
                     Summary = sdkSession.Summary,
                     IsRemote = sdkSession.IsRemote,
-                    MessageCount = 0
+                    MessageCount = 0,
+                    Messages = new List<PersistedMessage>()
                 };
-                _sessionMetadata.TryAdd(sdkSession.SessionId, metadata);
-                _logger.LogDebug("Added session {SessionId} from SDK sync", sdkSession.SessionId);
+                await _persistenceService.SaveSessionAsync(sessionData, cancellationToken);
+                _logger.LogDebug("Persisted session {SessionId} from SDK sync", sdkSession.SessionId);
             }
         }
     }
@@ -274,52 +342,19 @@ public class SessionManager
     #region Persistence Methods
 
     /// <summary>
-    /// Loads all persisted sessions from disk into memory.
-    /// </summary>
-    public async Task LoadPersistedSessionsAsync(CancellationToken cancellationToken = default)
-    {
-        if (_persistenceService == null)
-        {
-            _logger.LogDebug("No persistence service available, skipping session load");
-            return;
-        }
-
-        try
-        {
-            var persistedSessions = await _persistenceService.LoadAllSessionsAsync(cancellationToken);
-            foreach (var sessionData in persistedSessions)
-            {
-                var metadata = ConvertToMetadata(sessionData);
-                _sessionMetadata.TryAdd(sessionData.SessionId, metadata);
-            }
-            _logger.LogInformation("Loaded {Count} persisted sessions", persistedSessions.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load persisted sessions");
-        }
-    }
-
-    /// <summary>
     /// Persists a session to disk.
     /// </summary>
-    public async Task PersistSessionAsync(string sessionId, Models.Domain.SessionMetadata? metadata = null, CancellationToken cancellationToken = default)
+    public async Task PersistSessionAsync(string sessionId, Models.Domain.SessionMetadata metadata, CancellationToken cancellationToken = default)
     {
         if (_persistenceService == null)
         {
+            _logger.LogWarning("No persistence service available, cannot persist session {SessionId}", sessionId);
             return;
         }
 
         try
         {
-            metadata ??= GetMetadata(sessionId);
-            if (metadata == null)
-            {
-                _logger.LogWarning("Cannot persist session {SessionId}: metadata not found", sessionId);
-                return;
-            }
-
-            var sessionData = await ConvertToPersistedDataAsync(sessionId, metadata, cancellationToken);
+            var sessionData = ConvertToPersistedData(metadata);
             await _persistenceService.SaveSessionAsync(sessionData, cancellationToken);
             _logger.LogDebug("Persisted session {SessionId}", sessionId);
         }
@@ -363,21 +398,26 @@ public class SessionManager
         return await _persistenceService.GetMessagesAsync(sessionId, cancellationToken);
     }
 
-    private async Task DeletePersistedSessionAsync(string sessionId)
+    private async Task<bool> DeletePersistedSessionAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         if (_persistenceService == null)
         {
-            return;
+            return false;
         }
 
         try
         {
-            await _persistenceService.DeleteSessionAsync(sessionId);
-            _logger.LogDebug("Deleted persisted session {SessionId}", sessionId);
+            var deleted = await _persistenceService.DeleteSessionAsync(sessionId, cancellationToken);
+            if (deleted)
+            {
+                _logger.LogDebug("Deleted persisted session {SessionId}", sessionId);
+            }
+            return deleted;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to delete persisted session {SessionId}", sessionId);
+            return false;
         }
     }
 
@@ -433,23 +473,18 @@ public class SessionManager
         };
     }
 
-    private async Task<PersistedSessionData> ConvertToPersistedDataAsync(string sessionId, Models.Domain.SessionMetadata metadata, CancellationToken cancellationToken)
+    private static PersistedSessionData ConvertToPersistedData(Models.Domain.SessionMetadata metadata)
     {
-        // Load existing messages if any
-        var existingMessages = _persistenceService != null 
-            ? await _persistenceService.GetMessagesAsync(sessionId, cancellationToken) 
-            : new List<PersistedMessage>();
-
         return new PersistedSessionData
         {
-            SessionId = sessionId,
+            SessionId = metadata.SessionId,
             CreatedAt = metadata.CreatedAt ?? DateTime.UtcNow,
             LastActivityAt = metadata.LastActivityAt,
             MessageCount = metadata.MessageCount,
             Summary = metadata.Summary,
             IsRemote = metadata.IsRemote,
             Config = metadata.Config != null ? ConvertToPersistedConfig(metadata.Config) : null,
-            Messages = existingMessages
+            Messages = new List<PersistedMessage>()
         };
     }
 
