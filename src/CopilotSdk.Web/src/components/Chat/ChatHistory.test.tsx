@@ -221,4 +221,52 @@ describe('ChatHistory', () => {
       expect(screen.getByText('No messages yet. Start a conversation!')).toBeInTheDocument();
     });
   });
+
+  describe('persisted history', () => {
+    it('renders standalone tool.execution_complete events (from persisted history)', () => {
+      const events: SessionEvent[] = [
+        {
+          id: 'e1',
+          type: 'tool.execution_complete',
+          timestamp: '2026-01-18T10:00:00Z',
+          data: {
+            toolCallId: 'tc1',
+            toolName: 'persisted_tool',
+            result: 'Tool completed successfully',
+          },
+        },
+      ];
+      render(<ChatHistory events={events} />);
+      
+      // Should render the tool execution card from the standalone complete event
+      expect(screen.getByTestId('tool-execution-card')).toBeInTheDocument();
+      expect(screen.getByText('persisted_tool')).toBeInTheDocument();
+    });
+
+    it('does not duplicate tool.execution_complete events when paired with start', () => {
+      const events: SessionEvent[] = [
+        {
+          id: 'e1',
+          type: 'tool.execution_start',
+          timestamp: '2026-01-18T10:00:00Z',
+          data: { toolCallId: 'tc1', toolName: 'paired_tool' },
+        },
+        {
+          id: 'e2',
+          type: 'tool.execution_complete',
+          timestamp: '2026-01-18T10:00:05Z',
+          data: {
+            toolCallId: 'tc1',
+            toolName: 'paired_tool',
+            result: 'Done',
+          },
+        },
+      ];
+      render(<ChatHistory events={events} />);
+      
+      // Should only render one tool card (from the start event, paired with complete)
+      const toolCards = screen.getAllByTestId('tool-execution-card');
+      expect(toolCards).toHaveLength(1);
+    });
+  });
 });

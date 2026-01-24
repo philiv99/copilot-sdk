@@ -28,10 +28,26 @@ public class PersistenceService : IPersistenceService
         _logger = logger;
 
         // Get data directory from configuration or use default
+        // Default: sibling 'data' folder relative to the CopilotSdk.Api project (src/data)
         var configuredPath = configuration.GetValue<string>("Persistence:DataDirectory");
-        _dataDirectory = string.IsNullOrWhiteSpace(configuredPath) 
-            ? Path.Combine(AppContext.BaseDirectory, "data")
-            : configuredPath;
+        if (string.IsNullOrWhiteSpace(configuredPath))
+        {
+            // Navigate from bin/Debug/net9.0 up to src folder and create data sibling to CopilotSdk.Api
+            var baseDir = AppContext.BaseDirectory;
+            var srcDir = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", ".."));
+            _dataDirectory = Path.Combine(srcDir, "data");
+        }
+        else if (!Path.IsPathRooted(configuredPath))
+        {
+            // If relative path, resolve relative to the src folder
+            var baseDir = AppContext.BaseDirectory;
+            var srcDir = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", ".."));
+            _dataDirectory = Path.GetFullPath(Path.Combine(srcDir, configuredPath));
+        }
+        else
+        {
+            _dataDirectory = configuredPath;
+        }
 
         _sessionsDirectory = Path.Combine(_dataDirectory, "sessions");
         _clientConfigPath = Path.Combine(_dataDirectory, "client-config.json");

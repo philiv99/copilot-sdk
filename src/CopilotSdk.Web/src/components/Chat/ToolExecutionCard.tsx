@@ -9,8 +9,8 @@ import './ToolExecutionCard.css';
  * Props for the ToolExecutionCard component.
  */
 export interface ToolExecutionCardProps {
-  /** Tool execution start data. */
-  startData: ToolExecutionStartData;
+  /** Tool execution start data (optional - may not be available for persisted history). */
+  startData?: ToolExecutionStartData;
   /** Tool execution complete data (if completed). */
   completeData?: ToolExecutionCompleteData;
   /** Whether the tool is currently executing. */
@@ -61,15 +61,20 @@ export function ToolExecutionCard({
 }: ToolExecutionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  // Get tool info from startData or completeData (for persisted history)
+  const toolCallId = startData?.toolCallId || completeData?.toolCallId || '';
+  const toolName = startData?.toolName || completeData?.toolName || 'Unknown Tool';
+  const displayName = startData?.displayName || toolName;
+  const args = startData?.arguments;
+
   const hasError = !!completeData?.error;
   const statusIcon = getStatusIcon(isExecuting, hasError);
-  const displayName = startData.displayName || startData.toolName;
 
   return (
     <div
       className={`tool-execution-card ${isExecuting ? 'executing' : ''} ${hasError ? 'error' : ''}`}
       data-testid="tool-execution-card"
-      data-tool-call-id={startData.toolCallId}
+      data-tool-call-id={toolCallId}
     >
       <button
         className="tool-header"
@@ -88,10 +93,10 @@ export function ToolExecutionCard({
 
       {isExpanded && (
         <div className="tool-details">
-          {startData.arguments !== undefined && startData.arguments !== null && (
+          {args !== undefined && args !== null && (
             <div className="tool-section">
               <div className="tool-section-label">Arguments</div>
-              <pre className="tool-code">{formatArguments(startData.arguments)}</pre>
+              <pre className="tool-code">{formatArguments(args)}</pre>
             </div>
           )}
 

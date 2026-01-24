@@ -55,12 +55,17 @@ interface ProcessedEvent {
 function processEvents(events: SessionEvent[]): ProcessedEvent[] {
   const processed: ProcessedEvent[] = [];
   const toolCompleteMap = new Map<string, SessionEvent>();
+  const toolStartIds = new Set<string>();
 
-  // First pass: collect tool completions
+  // First pass: collect tool completions and track tool start IDs
   for (const event of events) {
     if (event.type === 'tool.execution_complete') {
       const data = event.data as ToolExecutionCompleteData;
       toolCompleteMap.set(data.toolCallId, event);
+    }
+    if (event.type === 'tool.execution_start') {
+      const data = event.data as ToolExecutionStartData;
+      toolStartIds.add(data.toolCallId);
     }
   }
 
@@ -86,6 +91,17 @@ function processEvents(events: SessionEvent[]): ProcessedEvent[] {
         break;
       }
 
+      case 'tool.execution_complete': {
+        // Render standalone tool.execution_complete events (from persisted history)
+        // that don't have a corresponding tool.execution_start
+        const data = event.data as ToolExecutionCompleteData;
+        if (!toolStartIds.has(data.toolCallId)) {
+          processed.push({ type: 'tool', event, toolComplete: event });
+        }
+        // Otherwise, skip - it's handled by the tool.execution_start event
+        break;
+      }
+
       case 'session.error':
         processed.push({ type: 'error', event });
         break;
@@ -93,7 +109,6 @@ function processEvents(events: SessionEvent[]): ProcessedEvent[] {
       // Skip these event types in the chat display
       case 'assistant.message_delta':
       case 'assistant.reasoning_delta':
-      case 'tool.execution_complete':
       case 'assistant.turn_start':
       case 'assistant.turn_end':
       case 'assistant.usage':
@@ -209,9 +224,13 @@ export function ChatHistory({
             }
 
             case 'tool': {
-              const startData = event.data as ToolExecutionStartData;
+              // For tool.execution_start events, we have startData
+              // For standalone tool.execution_complete (persisted history), startData comes from event
+              const isStartEvent = event.type === 'tool.execution_start';
+              const startData = isStartEvent ? event.data as ToolExecutionStartData : undefined;
               const completeData = processed.toolComplete?.data as ToolExecutionCompleteData | undefined;
-              const isExecuting = executingToolIds.has(startData.toolCallId);
+              const toolCallId = startData?.toolCallId || completeData?.toolCallId || '';
+              const isExecuting = executingToolIds.has(toolCallId);
               return (
                 <ToolExecutionCard
                   key={event.id}

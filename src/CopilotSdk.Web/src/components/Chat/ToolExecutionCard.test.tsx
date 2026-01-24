@@ -126,4 +126,45 @@ describe('ToolExecutionCard', () => {
       expect(screen.getByTestId('tool-execution-card')).toHaveClass('error');
     });
   });
+
+  describe('persisted history (completeData only)', () => {
+    it('renders when only completeData is provided', () => {
+      render(<ToolExecutionCard completeData={mockCompleteData} />);
+      
+      expect(screen.getByTestId('tool-execution-card')).toBeInTheDocument();
+      expect(screen.getByText('test_tool')).toBeInTheDocument();
+    });
+
+    it('uses tool name from completeData when startData is missing', () => {
+      const completeOnly = { ...mockCompleteData, toolName: 'persisted_tool' };
+      render(<ToolExecutionCard completeData={completeOnly} />);
+      
+      expect(screen.getByText('persisted_tool')).toBeInTheDocument();
+    });
+
+    it('shows result when expanded with completeData only', () => {
+      render(<ToolExecutionCard completeData={mockCompleteData} />);
+      
+      fireEvent.click(screen.getByRole('button'));
+      
+      expect(screen.getByText(/"success": true/)).toBeInTheDocument();
+    });
+
+    it('shows error when expanded with completeData error', () => {
+      const errorComplete = { ...mockCompleteData, error: 'Tool failed', result: undefined };
+      render(<ToolExecutionCard completeData={errorComplete} />);
+      
+      fireEvent.click(screen.getByRole('button'));
+      
+      expect(screen.getByText('Error')).toBeInTheDocument();
+      expect(screen.getByText('Tool failed')).toBeInTheDocument();
+    });
+
+    it('has error class when completeData has error', () => {
+      const errorComplete = { ...mockCompleteData, error: 'Error' };
+      render(<ToolExecutionCard completeData={errorComplete} />);
+      
+      expect(screen.getByTestId('tool-execution-card')).toHaveClass('error');
+    });
+  });
 });

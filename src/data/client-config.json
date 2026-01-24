@@ -1,0 +1,7 @@
+{
+  "port": 0,
+  "useStdio": true,
+  "logLevel": "info",
+  "autoStart": true,
+  "autoRestart": true
+}

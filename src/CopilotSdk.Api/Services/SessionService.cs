@@ -302,22 +302,37 @@ public class SessionService : ISessionService
         _logger.LogInformation("Getting messages for session {SessionId}", sessionId);
 
         var session = _sessionManager.GetSession(sessionId);
-        if (session == null)
+        
+        // If we have an active SDK session, get messages from it
+        if (session != null)
         {
-            _logger.LogWarning("Session {SessionId} not found for getting messages", sessionId);
-            return new MessagesResponse
+            try
             {
-                SessionId = sessionId,
-                Events = new List<SessionEventDto>(),
-                TotalCount = 0
-            };
+                var sdkEvents = await session.GetMessagesAsync(cancellationToken);
+                var events = sdkEvents.Select(MapEventToDto).ToList();
+
+                return new MessagesResponse
+                {
+                    SessionId = sessionId,
+                    Events = events,
+                    TotalCount = events.Count
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting messages from SDK session {SessionId}, falling back to persisted messages", sessionId);
+                // Fall through to try persisted messages
+            }
         }
 
-        try
-        {
-            var sdkEvents = await session.GetMessagesAsync(cancellationToken);
+        // No active session or error - try to get persisted messages
+        _logger.LogInformation("No active SDK session for {SessionId}, loading persisted messages", sessionId);
+        var persistedMessages = await _sessionManager.GetPersistedMessagesAsync(sessionId, cancellationToken);
 
-            var events = sdkEvents.Select(MapEventToDto).ToList();
+        if (persistedMessages.Count > 0)
+        {
+            _logger.LogInformation("Found {Count} persisted messages for session {SessionId}", persistedMessages.Count, sessionId);
+            var events = persistedMessages.Select(MapPersistedMessageToDto).ToList();
 
             return new MessagesResponse
             {
@@ -326,16 +341,81 @@ public class SessionService : ISessionService
                 TotalCount = events.Count
             };
         }
-        catch (Exception ex)
+
+        _logger.LogWarning("No messages found for session {SessionId}", sessionId);
+        return new MessagesResponse
         {
-            _logger.LogError(ex, "Error getting messages for session {SessionId}", sessionId);
-            return new MessagesResponse
-            {
-                SessionId = sessionId,
-                Events = new List<SessionEventDto>(),
-                TotalCount = 0
-            };
+            SessionId = sessionId,
+            Events = new List<SessionEventDto>(),
+            TotalCount = 0
+        };
+    }
+
+    /// <summary>
+    /// Maps a persisted message to a session event DTO.
+    /// </summary>
+    private static SessionEventDto MapPersistedMessageToDto(PersistedMessage message)
+    {
+        var dto = new SessionEventDto
+        {
+            Id = message.Id,
+            Timestamp = new DateTimeOffset(message.Timestamp, TimeSpan.Zero),
+            Ephemeral = false
+        };
+
+        switch (message.Role.ToLowerInvariant())
+        {
+            case "user":
+                dto.Type = "user.message";
+                dto.Data = new UserMessageDataDto
+                {
+                    Content = message.Content,
+                    TransformedContent = message.TransformedContent,
+                    Source = message.Source,
+                    Attachments = message.Attachments?.Select(a => new MessageAttachmentDto
+                    {
+                        Type = a.Type,
+                        Path = a.Path,
+                        DisplayName = a.DisplayName
+                    }).ToList()
+                };
+                break;
+
+            case "assistant":
+                dto.Type = "assistant.message";
+                dto.Data = new AssistantMessageDataDto
+                {
+                    MessageId = message.MessageId ?? message.Id.ToString(),
+                    Content = message.Content,
+                    ParentToolCallId = message.ParentToolCallId,
+                    ToolRequests = message.ToolRequests?.Select(t => new ToolRequestDto
+                    {
+                        ToolCallId = t.ToolCallId,
+                        ToolName = t.ToolName,
+                        Arguments = t.Arguments
+                    }).ToList()
+                };
+                break;
+
+            case "tool":
+                dto.Type = "tool.execution_complete";
+                dto.Data = new ToolExecutionCompleteDataDto
+                {
+                    ToolCallId = message.ToolCallId ?? string.Empty,
+                    ToolName = message.ToolName ?? string.Empty,
+                    Result = message.ToolResult,
+                    Error = message.ToolError
+                };
+                break;
+
+            default:
+                // For other types, use the role as-is
+                dto.Type = message.Role;
+                dto.Data = new { content = message.Content };
+                break;
         }
+
+        return dto;
     }
 
     /// <inheritdoc/>
