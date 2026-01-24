@@ -310,7 +310,17 @@ export function SessionProvider({ children, autoConnectHub = true }: SessionProv
       }
 
       dispatch({ type: 'FETCH_START' });
-      const session = await api.getSession(sessionId);
+      let session = await api.getSession(sessionId);
+      
+      // Auto-resume inactive sessions so messages can be sent
+      if (session.status?.toLowerCase() === 'inactive') {
+        session = await api.resumeSession(sessionId);
+        // Update the session in the list
+        dispatch({ type: 'FETCH_SESSIONS_SUCCESS', payload: 
+          state.sessions.map((s) => (s.sessionId === sessionId ? session : s))
+        });
+      }
+      
       const messages = await api.getMessages(sessionId);
 
       dispatch({ type: 'SET_ACTIVE_SESSION', payload: { sessionId, session } });
@@ -326,7 +336,7 @@ export function SessionProvider({ children, autoConnectHub = true }: SessionProv
       dispatch({ type: 'FETCH_ERROR', payload: err instanceof Error ? err.message : 'Failed to select session' });
       throw err;
     }
-  }, [state.activeSessionId, joinSessionHub, leaveSessionHub]);
+  }, [state.activeSessionId, state.sessions, joinSessionHub, leaveSessionHub]);
 
   // Clear active session
   const clearActiveSession = useCallback(() => {
