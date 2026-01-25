@@ -18,6 +18,7 @@ import {
   MessagesResponse,
   RefinePromptRequest,
   RefinePromptResponse,
+  ModelsResponse,
 } from '../types';
 
 /**
@@ -281,6 +282,35 @@ export async function refineSystemMessage(request: RefinePromptRequest): Promise
     return response.data;
   } catch (error) {
     console.error('[copilotApi] refineSystemMessage - error:', error);
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+// #endregion
+
+// #region Models Operations
+
+/**
+ * Get the list of available AI models.
+ * The list is cached on the server for one week.
+ */
+export async function getModels(): Promise<ModelsResponse> {
+  try {
+    const response = await apiClient.get<ModelsResponse>('/models');
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+/**
+ * Force refresh the cached models list.
+ */
+export async function refreshModels(): Promise<ModelsResponse> {
+  try {
+    const response = await apiClient.post<ModelsResponse>('/models/refresh');
+    return response.data;
+  } catch (error) {
     throw new Error(extractErrorMessage(error));
   }
 }

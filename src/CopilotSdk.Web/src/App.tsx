@@ -12,7 +12,7 @@ import './App.css';
  */
 function MainLayoutWithParams() {
   const { sessionId } = useParams<{ sessionId?: string }>();
-  return <MainLayout title="Copilot SDK" initialSessionId={sessionId} />;
+  return <MainLayout title="App Maker" initialSessionId={sessionId} />;
 }
 
 /**

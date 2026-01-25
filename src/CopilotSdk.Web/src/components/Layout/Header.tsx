@@ -17,7 +17,7 @@ export interface HeaderProps {
 /**
  * Header component displaying the app title and settings button.
  */
-export function Header({ title = 'Copilot SDK', onSettingsClick }: HeaderProps) {
+export function Header({ title = 'App Maker', onSettingsClick }: HeaderProps) {
   return (
     <header className="app-header" data-testid="app-header" role="banner">
       <div className="header-left">

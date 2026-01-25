@@ -8,7 +8,7 @@ import { Header } from './Header';
 describe('Header', () => {
   it('renders with default title', () => {
     render(<Header />);
-    expect(screen.getByText('Copilot SDK')).toBeInTheDocument();
+    expect(screen.getByText('App Maker')).toBeInTheDocument();
   });
 
   it('renders with custom title', () => {

@@ -68,10 +68,14 @@ builder.Services.AddSingleton<SessionEventDispatcher>(sp =>
     return new SessionEventDispatcher(hubContext, logger, sessionManager);
 });
 
+// Add memory cache for models service
+builder.Services.AddMemoryCache();
+
 builder.Services.AddSingleton<IToolExecutionService, ToolExecutionService>();
 builder.Services.AddScoped<ICopilotClientService, CopilotClientService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IPromptRefinementService, PromptRefinementService>();
+builder.Services.AddScoped<IModelsService, ModelsService>();
 
 // Register hosted service for automatic client startup/shutdown
 builder.Services.AddHostedService<CopilotClientHostedService>();

@@ -90,3 +90,27 @@ export interface PingResponse {
  * Connection state enum values.
  */
 export type ConnectionState = 'Disconnected' | 'Connecting' | 'Connected' | 'Error';
+
+/**
+ * Information about an available AI model.
+ */
+export interface ModelInfo {
+  /** The model identifier used in API calls. */
+  value: string;
+  /** Human-readable display name. */
+  label: string;
+  /** Description of the model's capabilities. */
+  description: string;
+}
+
+/**
+ * Response model for available models.
+ */
+export interface ModelsResponse {
+  /** List of available models. */
+  models: ModelInfo[];
+  /** Timestamp when the models list was cached. */
+  cachedAt: string;
+  /** Timestamp when the cache will expire. */
+  expiresAt: string;
+}
