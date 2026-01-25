@@ -2,10 +2,10 @@
  * Main application component.
  */
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { CopilotClientProvider, SessionProvider } from './context';
 import { MainLayout, ErrorBoundary, ToastProvider } from './components';
-import { DashboardView, ClientConfigView, SessionsView } from './views';
+import { ClientConfigView, SessionsView } from './views';
 import './App.css';
 
 /**
@@ -20,7 +20,7 @@ function App() {
             <SessionProvider autoConnectHub={true}>
               <MainLayout title="Copilot SDK">
                 <Routes>
-                  <Route path="/" element={<DashboardView />} />
+                  <Route path="/" element={<Navigate to="/sessions" replace />} />
                   <Route path="/config" element={<ClientConfigView />} />
                   <Route path="/sessions" element={<SessionsView />} />
                   <Route path="/sessions/:sessionId" element={<SessionsView />} />

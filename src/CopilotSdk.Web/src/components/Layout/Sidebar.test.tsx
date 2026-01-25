@@ -94,7 +94,6 @@ describe('Sidebar', () => {
 
   it('renders default navigation items', () => {
     renderWithProviders(<Sidebar />);
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
     expect(screen.getByText('Client Config')).toBeInTheDocument();
     // Check for Sessions nav link (there are two "Sessions" - nav and header)
     expect(screen.getAllByText('Sessions').length).toBeGreaterThanOrEqual(1);

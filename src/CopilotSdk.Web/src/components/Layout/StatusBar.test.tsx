@@ -2,10 +2,11 @@
  * Tests for the StatusBar component.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { StatusBar } from './StatusBar';
 import { CopilotClientProvider, SessionProvider } from '../../context';
 import { BrowserRouter } from 'react-router-dom';
+import * as api from '../../api';
 
 // Mock the API module
 jest.mock('../../api', () => ({
@@ -25,6 +26,10 @@ jest.mock('../../api', () => ({
     sessions: [],
     totalCount: 0,
   }),
+  startClient: jest.fn().mockResolvedValue({ connectionState: 'Connected', isConnected: true }),
+  stopClient: jest.fn().mockResolvedValue({ connectionState: 'Disconnected', isConnected: false }),
+  forceStopClient: jest.fn().mockResolvedValue({ connectionState: 'Disconnected', isConnected: false }),
+  pingClient: jest.fn().mockResolvedValue({ success: true, message: 'pong', latencyMs: 10 }),
 }));
 
 // Mock SignalR
@@ -70,6 +75,10 @@ const renderWithProviders = (ui: React.ReactElement) => {
 };
 
 describe('StatusBar', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('renders the status bar', () => {
     renderWithProviders(<StatusBar />);
     expect(screen.getByTestId('app-status-bar')).toBeInTheDocument();
@@ -92,5 +101,44 @@ describe('StatusBar', () => {
       </StatusBar>
     );
     expect(screen.getByTestId('custom-content')).toBeInTheDocument();
+  });
+
+  it('renders quick action buttons', () => {
+    renderWithProviders(<StatusBar />);
+    expect(screen.getByTestId('status-bar-actions')).toBeInTheDocument();
+  });
+
+  it('renders ping button', () => {
+    renderWithProviders(<StatusBar />);
+    expect(screen.getByTestId('status-ping-btn')).toBeInTheDocument();
+  });
+
+  it('shows start button when disconnected', async () => {
+    (api.getClientStatus as jest.Mock).mockResolvedValueOnce({
+      connectionState: 'Disconnected',
+      isConnected: false,
+    });
+    renderWithProviders(<StatusBar />);
+    await waitFor(() => {
+      expect(screen.getByTestId('status-start-btn')).toBeInTheDocument();
+    });
+  });
+
+  it('calls startClient when start button is clicked', async () => {
+    (api.getClientStatus as jest.Mock).mockResolvedValueOnce({
+      connectionState: 'Disconnected',
+      isConnected: false,
+    });
+    renderWithProviders(<StatusBar />);
+    
+    await waitFor(() => {
+      expect(screen.getByTestId('status-start-btn')).toBeInTheDocument();
+    });
+    
+    fireEvent.click(screen.getByTestId('status-start-btn'));
+    
+    await waitFor(() => {
+      expect(api.startClient).toHaveBeenCalled();
+    });
   });
 });

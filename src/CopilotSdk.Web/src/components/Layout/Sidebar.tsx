@@ -36,9 +36,8 @@ export interface SidebarProps {
  * Default navigation items.
  */
 const defaultNavItems: NavItem[] = [
-  { path: '/', label: 'Dashboard', icon: '📊' },
-  { path: '/config', label: 'Client Config', icon: '⚙️' },
   { path: '/sessions', label: 'Sessions', icon: '💬' },
+  { path: '/config', label: 'Client Config', icon: '⚙️' },
 ];
 
 /**
