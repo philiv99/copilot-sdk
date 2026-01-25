@@ -15,3 +15,5 @@ export * from './EventLogPanel';
 export * from './ErrorBoundary';
 export * from './Toast';
 export * from './Loading';
+export * from './TabContainer';
+export * from './ClientConfigModal';

@@ -2,56 +2,49 @@
  * Tests for the Header component.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { Header } from './Header';
-import { CopilotClientProvider } from '../../context';
-import { BrowserRouter } from 'react-router-dom';
-
-// Mock the API module
-jest.mock('../../api', () => ({
-  getClientStatus: jest.fn().mockResolvedValue({
-    connectionState: 'Connected',
-    isConnected: true,
-    connectedAt: new Date().toISOString(),
-  }),
-  getClientConfig: jest.fn().mockResolvedValue({
-    cliPath: '/usr/bin/copilot',
-    port: 0,
-    useStdio: true,
-    logLevel: 'info',
-    autoStart: true,
-    autoRestart: true,
-  }),
-}));
-
-const renderWithProviders = (ui: React.ReactElement) => {
-  return render(
-    <BrowserRouter>
-      <CopilotClientProvider autoRefresh={false}>
-        {ui}
-      </CopilotClientProvider>
-    </BrowserRouter>
-  );
-};
 
 describe('Header', () => {
   it('renders with default title', () => {
-    renderWithProviders(<Header />);
+    render(<Header />);
     expect(screen.getByText('Copilot SDK')).toBeInTheDocument();
   });
 
   it('renders with custom title', () => {
-    renderWithProviders(<Header title="Custom Title" />);
+    render(<Header title="Custom Title" />);
     expect(screen.getByText('Custom Title')).toBeInTheDocument();
   });
 
   it('has the app-header test id', () => {
-    renderWithProviders(<Header />);
+    render(<Header />);
     expect(screen.getByTestId('app-header')).toBeInTheDocument();
   });
 
-  it('displays status indicator', () => {
-    renderWithProviders(<Header />);
-    expect(screen.getByTestId('status-indicator')).toBeInTheDocument();
+  it('renders settings button when onSettingsClick is provided', () => {
+    const handleClick = jest.fn();
+    render(<Header onSettingsClick={handleClick} />);
+    expect(screen.getByTestId('settings-button')).toBeInTheDocument();
+  });
+
+  it('does not render settings button when onSettingsClick is not provided', () => {
+    render(<Header />);
+    expect(screen.queryByTestId('settings-button')).not.toBeInTheDocument();
+  });
+
+  it('calls onSettingsClick when settings button is clicked', () => {
+    const handleClick = jest.fn();
+    render(<Header onSettingsClick={handleClick} />);
+    
+    fireEvent.click(screen.getByTestId('settings-button'));
+    
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('has proper accessibility attributes on settings button', () => {
+    render(<Header onSettingsClick={jest.fn()} />);
+    
+    const button = screen.getByTestId('settings-button');
+    expect(button).toHaveAttribute('aria-label', 'Open client configuration');
   });
 });

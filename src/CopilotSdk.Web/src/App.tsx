@@ -2,11 +2,18 @@
  * Main application component.
  */
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import { CopilotClientProvider, SessionProvider } from './context';
 import { MainLayout, ErrorBoundary, ToastProvider } from './components';
-import { ClientConfigView, SessionsView } from './views';
 import './App.css';
+
+/**
+ * Wrapper component that extracts sessionId from URL and passes to MainLayout.
+ */
+function MainLayoutWithParams() {
+  const { sessionId } = useParams<{ sessionId?: string }>();
+  return <MainLayout title="Copilot SDK" initialSessionId={sessionId} />;
+}
 
 /**
  * Main App component with routing and providers.
@@ -18,14 +25,11 @@ function App() {
         <ToastProvider maxToasts={5}>
           <CopilotClientProvider autoRefresh={true} refreshInterval={5000}>
             <SessionProvider autoConnectHub={true}>
-              <MainLayout title="Copilot SDK">
-                <Routes>
-                  <Route path="/" element={<Navigate to="/sessions" replace />} />
-                  <Route path="/config" element={<ClientConfigView />} />
-                  <Route path="/sessions" element={<SessionsView />} />
-                  <Route path="/sessions/:sessionId" element={<SessionsView />} />
-                </Routes>
-              </MainLayout>
+              <Routes>
+                <Route path="/" element={<MainLayoutWithParams />} />
+                <Route path="/sessions" element={<MainLayoutWithParams />} />
+                <Route path="/sessions/:sessionId" element={<MainLayoutWithParams />} />
+              </Routes>
             </SessionProvider>
           </CopilotClientProvider>
         </ToastProvider>

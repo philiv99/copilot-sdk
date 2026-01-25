@@ -3,69 +3,62 @@
  */
 import React, { useState, useCallback } from 'react';
 import { Header } from './Header';
-import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
+import { ClientConfigModal } from '../ClientConfigModal';
+import { TabContainer } from '../TabContainer';
 import './MainLayout.css';
 
 /**
  * Props for the MainLayout component.
  */
 export interface MainLayoutProps {
-  /** Main content to display. */
-  children: React.ReactNode;
   /** Title for the header. */
   title?: string;
-  /** Whether to show the sidebar. */
-  showSidebar?: boolean;
   /** Whether to show the status bar. */
   showStatusBar?: boolean;
+  /** Initial session ID to open (from URL). */
+  initialSessionId?: string;
 }
 
 /**
  * Main layout component providing the application shell.
+ * Uses a tab-based layout for session management.
  */
 export function MainLayout({
-  children,
   title,
-  showSidebar = true,
   showStatusBar = true,
+  initialSessionId,
 }: MainLayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
-  const toggleSidebar = useCallback(() => {
-    setSidebarOpen((prev) => !prev);
+  const handleSettingsClick = useCallback(() => {
+    setIsConfigModalOpen(true);
   }, []);
 
-  const closeSidebar = useCallback(() => {
-    setSidebarOpen(false);
+  const handleCloseConfigModal = useCallback(() => {
+    setIsConfigModalOpen(false);
   }, []);
 
   return (
     <div className="main-layout" data-testid="main-layout">
-      <Header title={title} onMenuClick={toggleSidebar} showMenuButton={showSidebar} />
+      <Header title={title} onSettingsClick={handleSettingsClick} />
       <div className="layout-body">
-        {showSidebar && (
-          <>
-            <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
-            {sidebarOpen && (
-              <div 
-                className="sidebar-overlay"
-                onClick={closeSidebar}
-                aria-hidden="true"
-              />
-            )}
-          </>
-        )}
         <main 
           className="layout-content" 
           data-testid="layout-content"
           role="main"
           aria-label="Main content"
         >
-          {children}
+          <TabContainer initialSessionId={initialSessionId} />
         </main>
       </div>
       {showStatusBar && <StatusBar />}
+      
+      {/* Client Config Modal */}
+      <ClientConfigModal
+        isOpen={isConfigModalOpen}
+        onClose={handleCloseConfigModal}
+      />
     </div>
   );
 }

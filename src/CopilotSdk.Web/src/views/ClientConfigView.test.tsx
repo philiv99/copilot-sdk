@@ -76,11 +76,6 @@ describe('ClientConfigView', () => {
       expect(screen.getByText('Client Configuration')).toBeInTheDocument();
     });
 
-    it('renders back link to dashboard', async () => {
-      await renderConfigView();
-      expect(screen.getByTestId('back-link')).toHaveAttribute('href', '/');
-    });
-
     it('renders connection settings section', async () => {
       await renderConfigView();
       expect(screen.getByTestId('connection-settings')).toBeInTheDocument();

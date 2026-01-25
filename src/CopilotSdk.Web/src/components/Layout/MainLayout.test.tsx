@@ -2,7 +2,7 @@
  * Tests for the MainLayout component.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MainLayout } from './MainLayout';
 import { CopilotClientProvider, SessionProvider } from '../../context';
 import { BrowserRouter } from 'react-router-dom';
@@ -21,6 +21,7 @@ jest.mock('../../api', () => ({
     autoStart: true,
     autoRestart: true,
   }),
+  getSessions: jest.fn().mockResolvedValue([]),
   listSessions: jest.fn().mockResolvedValue({
     sessions: [],
     totalCount: 0,
@@ -71,66 +72,60 @@ const renderWithProviders = (ui: React.ReactElement) => {
 
 describe('MainLayout', () => {
   it('renders the main layout', () => {
-    renderWithProviders(
-      <MainLayout>
-        <div>Test Content</div>
-      </MainLayout>
-    );
+    renderWithProviders(<MainLayout />);
     expect(screen.getByTestId('main-layout')).toBeInTheDocument();
   });
 
-  it('renders children in the content area', () => {
-    renderWithProviders(
-      <MainLayout>
-        <div data-testid="test-content">Test Content</div>
-      </MainLayout>
-    );
-    expect(screen.getByTestId('test-content')).toBeInTheDocument();
-    expect(screen.getByTestId('layout-content')).toContainElement(screen.getByTestId('test-content'));
-  });
-
   it('renders header with custom title', () => {
-    renderWithProviders(
-      <MainLayout title="Custom App Title">
-        <div>Test Content</div>
-      </MainLayout>
-    );
+    renderWithProviders(<MainLayout title="Custom App Title" />);
     expect(screen.getByText('Custom App Title')).toBeInTheDocument();
   });
 
-  it('renders sidebar by default', () => {
-    renderWithProviders(
-      <MainLayout>
-        <div>Test Content</div>
-      </MainLayout>
-    );
-    expect(screen.getByTestId('app-sidebar')).toBeInTheDocument();
-  });
-
-  it('hides sidebar when showSidebar is false', () => {
-    renderWithProviders(
-      <MainLayout showSidebar={false}>
-        <div>Test Content</div>
-      </MainLayout>
-    );
-    expect(screen.queryByTestId('app-sidebar')).not.toBeInTheDocument();
+  it('renders the tab container', () => {
+    renderWithProviders(<MainLayout />);
+    expect(screen.getByTestId('tab-container')).toBeInTheDocument();
   });
 
   it('renders status bar by default', () => {
-    renderWithProviders(
-      <MainLayout>
-        <div>Test Content</div>
-      </MainLayout>
-    );
+    renderWithProviders(<MainLayout />);
     expect(screen.getByTestId('app-status-bar')).toBeInTheDocument();
   });
 
   it('hides status bar when showStatusBar is false', () => {
-    renderWithProviders(
-      <MainLayout showStatusBar={false}>
-        <div>Test Content</div>
-      </MainLayout>
-    );
+    renderWithProviders(<MainLayout showStatusBar={false} />);
     expect(screen.queryByTestId('app-status-bar')).not.toBeInTheDocument();
+  });
+
+  it('renders settings button in header', () => {
+    renderWithProviders(<MainLayout />);
+    expect(screen.getByTestId('settings-button')).toBeInTheDocument();
+  });
+
+  it('opens config modal when settings button is clicked', async () => {
+    renderWithProviders(<MainLayout />);
+    
+    fireEvent.click(screen.getByTestId('settings-button'));
+    
+    await waitFor(() => {
+      expect(screen.getByTestId('client-config-modal')).toBeInTheDocument();
+    });
+  });
+
+  it('closes config modal when close button is clicked', async () => {
+    renderWithProviders(<MainLayout />);
+    
+    // Open modal
+    fireEvent.click(screen.getByTestId('settings-button'));
+    
+    await waitFor(() => {
+      expect(screen.getByTestId('client-config-modal')).toBeInTheDocument();
+    });
+    
+    // Close modal
+    fireEvent.click(screen.getByTestId('client-config-modal-close'));
+    
+    await waitFor(() => {
+      expect(screen.queryByTestId('client-config-modal')).not.toBeInTheDocument();
+    });
   });
 });

@@ -2,7 +2,6 @@
  * Client configuration view - allows configuring the Copilot SDK client settings.
  */
 import React, { useState, useCallback, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { useCopilotClient } from '../context';
 import { ConnectionStatusIndicator, EnvironmentVariableEditor } from '../components';
 import { CopilotClientConfig } from '../types';
@@ -14,9 +13,17 @@ import './ClientConfigView.css';
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
 /**
+ * Props for ClientConfigView.
+ */
+export interface ClientConfigViewProps {
+  /** Whether the view is rendered inside a modal. */
+  isModal?: boolean;
+}
+
+/**
  * Client configuration view component.
  */
-export function ClientConfigView() {
+export function ClientConfigView({ isModal = false }: ClientConfigViewProps) {
   const {
     config,
     status,
@@ -158,18 +165,17 @@ export function ClientConfigView() {
 
   return (
     <div className="client-config-view" data-testid="client-config-view">
-      <div className="config-header">
-        <div className="config-header-left">
-          <Link to="/" className="back-link" data-testid="back-link">
-            ← Dashboard
-          </Link>
-          <h2>Client Configuration</h2>
-          <p>Configure the Copilot SDK client settings.</p>
+      {!isModal && (
+        <div className="config-header">
+          <div className="config-header-left">
+            <h2>Client Configuration</h2>
+            <p>Configure the Copilot SDK client settings.</p>
+          </div>
+          <div className="config-header-right">
+            <ConnectionStatusIndicator state={connectionState} />
+          </div>
         </div>
-        <div className="config-header-right">
-          <ConnectionStatusIndicator state={connectionState} />
-        </div>
-      </div>
+      )}
 
       {/* Error Display */}
       {error && (

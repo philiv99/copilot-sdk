@@ -2,7 +2,6 @@
  * Header component for the application.
  */
 import React from 'react';
-import { useCopilotClient } from '../../context';
 import './Header.css';
 
 /**
@@ -11,44 +10,33 @@ import './Header.css';
 export interface HeaderProps {
   /** Title to display in the header. */
   title?: string;
-  /** Callback when menu button is clicked (mobile). */
-  onMenuClick?: () => void;
-  /** Whether to show the menu button. */
-  showMenuButton?: boolean;
+  /** Callback when settings button is clicked. */
+  onSettingsClick?: () => void;
 }
 
 /**
- * Header component displaying the app title and connection status.
+ * Header component displaying the app title and settings button.
  */
-export function Header({ title = 'Copilot SDK', onMenuClick, showMenuButton = true }: HeaderProps) {
-  const { connectionState, isConnected } = useCopilotClient();
-
-  const statusClass = isConnected ? 'status-connected' : 'status-disconnected';
-  const statusText = connectionState;
-
+export function Header({ title = 'Copilot SDK', onSettingsClick }: HeaderProps) {
   return (
     <header className="app-header" data-testid="app-header" role="banner">
       <div className="header-left">
-        {showMenuButton && (
-          <button
-            type="button"
-            className="menu-toggle-btn"
-            onClick={onMenuClick}
-            aria-label="Toggle navigation menu"
-            aria-expanded="false"
-          >
-            <span className="menu-icon">☰</span>
-          </button>
-        )}
         <div className="header-title">
           <h1>{title}</h1>
         </div>
       </div>
-      <div className="header-status">
-        <span className={`status-indicator ${statusClass}`} data-testid="status-indicator" role="status">
-          <span className="status-dot" aria-hidden="true" />
-          <span className="status-text">{statusText}</span>
-        </span>
+      <div className="header-right">
+        {onSettingsClick && (
+          <button
+            type="button"
+            className="settings-btn"
+            onClick={onSettingsClick}
+            aria-label="Open client configuration"
+            data-testid="settings-button"
+          >
+            <span className="settings-icon" aria-hidden="true">⚙️</span>
+          </button>
+        )}
       </div>
     </header>
   );

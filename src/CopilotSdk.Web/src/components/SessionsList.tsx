@@ -18,6 +18,8 @@ export interface SessionsListProps {
   onCreateClick?: () => void;
   /** Whether to show in compact mode (for sidebar). */
   compact?: boolean;
+  /** Callback when a session is clicked (overrides default navigation). */
+  onSessionClick?: (session: SessionInfoResponse) => void;
 }
 
 /**
@@ -70,7 +72,7 @@ function formatRelativeTime(dateString?: string): string {
 /**
  * Sessions list component.
  */
-export function SessionsList({ showCreateButton = true, onCreateClick, compact = false }: SessionsListProps) {
+export function SessionsList({ showCreateButton = true, onCreateClick, compact = false, onSessionClick }: SessionsListProps) {
   const navigate = useNavigate();
   const {
     sessions,
@@ -89,13 +91,18 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
 
   // Handle session click to select and navigate
   const handleSessionClick = useCallback(async (session: SessionInfoResponse) => {
+    // Use custom click handler if provided
+    if (onSessionClick) {
+      onSessionClick(session);
+      return;
+    }
     try {
       await selectSession(session.sessionId);
       navigate(`/sessions/${session.sessionId}`);
     } catch {
       // Error handled by context
     }
-  }, [selectSession, navigate]);
+  }, [selectSession, navigate, onSessionClick]);
 
   // Handle delete button click
   const handleDelete = useCallback(async (e: React.MouseEvent, sessionId: string) => {
