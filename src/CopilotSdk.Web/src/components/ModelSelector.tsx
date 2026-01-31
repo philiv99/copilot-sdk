@@ -13,7 +13,7 @@ import './ModelSelector.css';
 const DEFAULT_MODELS: ModelInfo[] = [
   { value: 'gpt-4o', label: 'GPT-4o', description: 'Most capable model for complex tasks' },
   { value: 'gpt-4o-mini', label: 'GPT-4o Mini', description: 'Fast and efficient for simpler tasks' },
-  { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', description: 'Balanced performance and speed' },
+  { value: 'claude-opus-4.5', label: 'Claude Opuse 4.5', description: 'Best performance and speed' },
 ];
 
 /**

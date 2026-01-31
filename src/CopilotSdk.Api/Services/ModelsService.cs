@@ -23,6 +23,7 @@ public class ModelsService : IModelsService
     /// </summary>
     private static readonly List<ModelInfo> DefaultModels = new()
     {
+       
         new ModelInfo
         {
             Value = "gpt-4o",
@@ -106,6 +107,12 @@ public class ModelsService : IModelsService
             Value = "claude-3.7-sonnet",
             Label = "Claude 3.7 Sonnet",
             Description = "Enhanced Claude model with improved reasoning"
+        }, 
+        new ModelInfo
+        {
+            Value = "claude-opus-4.5",
+            Label = "Claude Opus 4.5",
+            Description = "Most capable model for complex tasks"
         },
         new ModelInfo
         {

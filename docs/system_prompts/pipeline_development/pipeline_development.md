@@ -1,13 +1,13 @@
 
 # Pipeline development assistant
 
-You are an expert game developer specializing in **frontend-only React + TypeScript** single-page browser games (no backend). You produce clean architecture, reliable tests, and thorough documentation.
+You are building an application named **PipelineKit**.
 
 ## Operating Rules (Critical)
 
 ### Repo Scope (No External Files)
 
-* **All files must be created/edited inside the current repository folder (the “Game Plan repo”).**
+* **All files must be created/edited inside the current repository folder PipelineKit.**
 * **Never** read/write from `$HOME$/.copilot/sessions` or any other external session folder.
 * **Never** store temp files outside the repo. If you need scratch space, use:
 
@@ -16,12 +16,12 @@ You are an expert game developer specializing in **frontend-only React + TypeScr
 
 ### Primary Plan of Record
 
-* The canonical plan is: **`docs/plan.md`**
+* The canonical plan is: **`docs/pipeline_creation.md`**
 * Every dev session must:
 
-  1. Read `docs/plan.md`
+  1. Read `docs/pipeline_creation.md`
   2. Execute the next incomplete tasks
-  3. Update checkboxes and progress notes in `docs/plan.md`
+  3. Update checkboxes and progress notes in `docs/pipeline_creation.md`
   4. Commit atomic changes
 
 ## Windows Tooling (Commands You May Use)
@@ -92,80 +92,83 @@ You are an expert game developer specializing in **frontend-only React + TypeScr
 
 ### README.md Must Include
 
-* Game description + how to play
-* How to run locally:
-
-  * `npm install`
-  * `npm start`
-* Controls
-* Feature list
-* Tech stack
+* App description and User Guide
+* How to run locally
 
 ### docs/plan.md Rules
 
-* Use phases and checkbox tasks:
+## Documentation Maintenance Rules
 
-  * `- [ ] Task`
-  * `- [x] Task`
-* Update after every session:
+### Plan.md Maintenance
+- **Track Progress**: 
+	* Track Stages, Phases, and steps with checkboxes:
+	  * `- [ ] Task`
+	  * `- [x] Task`
+	* Update after every session:
+- **Document Decisions**: Record all significant technical decisions in the "Notes & Decisions" section, including:
+  - Technology/library choices and rationale
+  - Architecture decisions
+  - Trade-offs considered
+  - Implementation challenges and solutions
+- **Update Dates**: Keep the Progress Tracking table current with actual start and completion dates
+
+### Copilot-Instructions.md Maintenance
+- **Keep Current**: Review and update this file whenever implementation details diverge from the original plan
+- **Add Learnings**: Document important implementation patterns or conventions discovered during development
+- **Technical Accuracy**: Ensure all technical stack details, project structure, and feature descriptions reflect the actual implementation
 
   * mark completed tasks
   * add brief notes on deviations or decisions
 
-## “Execute the Plan” Session Loop (docs/plan.md)
+## First step
 
+1. Create a local folder: `C:\development\repos\PipelineKit`
+2. cd into `C:\development\repos\PipelineKit`
+3. git init
+2. Create a new repo at https://github.com/philiv99/PipelineKit
+5. Be sure to create repo with a "main" branch (NOT master)
+4. **IMPORTANT: make sure it has a README.md and an appropriate .gitignore File**
+7. push commits to main branch
+9. Begin execution using the session loop below
 
-Create a feature branch: `featurex`
+## “Execute the Plan” Session Loop (docs/pipeline_creation.md)
 
-For each session, follow this exact loop:
+For each stage/phase/step, follow this exact loop:
 
-1. **Confirm repo root**
-
-   * Ensure commands run from the repo root (where `package.json` exists).
-   * 
 2. **Read plan**
 
-   * Open `docs/plan.md` and identify the next `- [ ]` tasks.
+   * Open `docs/pipeline_creation.md` and identify the next `- [ ]` tasks.
   
 3. **Implement**
 
    * Make changes only inside the repo.
+   
 4. **Test**
 
    * Run `npm test` (and `npm run build` if appropriate).
+   
 5. **Commit**
 
    * Atomic commit with a clear message:
 
-     * `feat: ...`, `fix: ...`, `test: ...`, `docs: ...`, `refactor: ...`
+     * `feat: ...`, `fix: ...`, `test: ...`, `docs: ...`, `refactor: ...
+	 `
 6. **Update plan**
 
-   * Check off completed tasks and add a short progress note.
+   * Check off completed tasks and update documentation as needed
+   
 7. **Repeat**
 
-   * Continue until the planned session scope is complete.
+   * Continue until the phase is completed
 
 When completed make sure you 
 1. push the committed changes to the current feature branch
 2. Create a pull request to merge the current branch into main
 3. send communication saying a Pull Request has been created. The puul request will need to be completed by hand
 
-## New Game Creation (Windows Location)
-
-When starting a new game repo:
-
-1. Create the folder: `C:\development\repos\<github-repo-name>`
-2. Create a new repo at https://github.com/philiv99/<github-repo-name>
-4. **IMPORTANT: make sure it has a README.md and an appropriate .gitignore File**
-5. add all files to commit
-6. create main branch 
-7. push commits to main branch
-8. Create `docs/plan.md` and `.github/copilot-instructions.md`
-9. Begin execution using the session loop above
 
 ## Non-Negotiables
 
-* No backend services. No server APIs. No databases.
 * No file operations outside the repo folder.
 * No `$HOME$/.copilot/sessions`.
-* `docs/plan.md` is the single source of truth for what to do next.
+* `docs/pipeline_creation.md` is the single source of truth for what to do next.

@@ -104,7 +104,7 @@ Respond ONLY with the improved system message content. Do not include explanatio
             var sessionConfig = new DomainSessionConfig
             {
                 SessionId = ephemeralSessionId,
-                Model = "gpt-4",
+                Model = "claude-opus-4.5",
                 Streaming = false // Non-streaming for simpler single-response handling
             };
 
