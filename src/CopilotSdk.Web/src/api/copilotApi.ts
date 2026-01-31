@@ -19,6 +19,8 @@ import {
   RefinePromptRequest,
   RefinePromptResponse,
   ModelsResponse,
+  SystemPromptTemplatesResponse,
+  SystemPromptTemplateContentResponse,
 } from '../types';
 
 /**
@@ -309,6 +311,38 @@ export async function getModels(): Promise<ModelsResponse> {
 export async function refreshModels(): Promise<ModelsResponse> {
   try {
     const response = await apiClient.post<ModelsResponse>('/models/refresh');
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+// #endregion
+
+// #region System Prompt Templates Operations
+
+/**
+ * Get the list of available system prompt templates.
+ * Templates are folders in docs/system_prompts that contain a copilot-instructions.md file.
+ */
+export async function getSystemPromptTemplates(): Promise<SystemPromptTemplatesResponse> {
+  try {
+    const response = await apiClient.get<SystemPromptTemplatesResponse>('/system-prompt-templates');
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+/**
+ * Get the content of a specific system prompt template.
+ * @param templateName The name of the template (folder name).
+ */
+export async function getSystemPromptTemplateContent(templateName: string): Promise<SystemPromptTemplateContentResponse> {
+  try {
+    const response = await apiClient.get<SystemPromptTemplateContentResponse>(
+      `/system-prompt-templates/${encodeURIComponent(templateName)}`
+    );
     return response.data;
   } catch (error) {
     throw new Error(extractErrorMessage(error));

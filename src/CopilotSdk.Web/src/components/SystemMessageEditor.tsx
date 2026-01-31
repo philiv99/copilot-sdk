@@ -1,10 +1,11 @@
 /**
  * System message editor component for configuring session system prompts.
  */
-import React, { useEffect, useCallback, useRef } from 'react';
-import { SystemMessageConfig } from '../types';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
+import { SystemMessageConfig, SystemPromptTemplate } from '../types';
 import { usePromptRefinement } from '../hooks';
 import { RefineButton } from './RefineButton';
+import { getSystemPromptTemplates, getSystemPromptTemplateContent } from '../api/copilotApi';
 import './SystemMessageEditor.css';
 
 /**
@@ -54,6 +55,55 @@ export function SystemMessageEditor({
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previousLengthRef = useRef<number | null>(null);
+
+  // Template state
+  const [templates, setTemplates] = useState<SystemPromptTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [isLoadingContent, setIsLoadingContent] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+
+  // Load templates when component mounts or becomes enabled
+  useEffect(() => {
+    if (isEnabled && templates.length === 0) {
+      loadTemplates();
+    }
+  }, [isEnabled]);
+
+  const loadTemplates = async () => {
+    setIsLoadingTemplates(true);
+    setTemplateError(null);
+    try {
+      const response = await getSystemPromptTemplates();
+      setTemplates(response.templates);
+    } catch (err) {
+      setTemplateError(err instanceof Error ? err.message : 'Failed to load templates');
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  };
+
+  const handleTemplateSelect = async (templateName: string) => {
+    setSelectedTemplate(templateName);
+    setTemplateError(null);
+    
+    if (!templateName) {
+      return;
+    }
+
+    setIsLoadingContent(true);
+    try {
+      const response = await getSystemPromptTemplateContent(templateName);
+      if (value) {
+        onChange({ ...value, content: response.content });
+        announceToScreenReader(`Template "${templateName}" loaded successfully.`);
+      }
+    } catch (err) {
+      setTemplateError(err instanceof Error ? err.message : 'Failed to load template content');
+    } finally {
+      setIsLoadingContent(false);
+    }
+  };
 
   // Calculate character count change
   const charCountChange = lastResponse && previousLengthRef.current !== null
@@ -184,6 +234,44 @@ export function SystemMessageEditor({
                 <span className="mode-option-description">Override default system message</span>
               </label>
             </div>
+          </div>
+
+          {/* Template selector */}
+          <div className="system-message-template">
+            <label htmlFor="template-selector" className="template-label">
+              Load from Template:
+            </label>
+            <div className="template-selector-wrapper">
+              <select
+                id="template-selector"
+                className="template-selector"
+                value={selectedTemplate}
+                onChange={(e) => handleTemplateSelect(e.target.value)}
+                disabled={disabled || isLoadingTemplates || isLoadingContent}
+                data-testid="template-selector"
+                aria-describedby={templateError ? 'template-error' : undefined}
+              >
+                <option value="">
+                  {isLoadingTemplates ? 'Loading templates...' : '-- Select a template --'}
+                </option>
+                {templates.map((template) => (
+                  <option key={template.name} value={template.name}>
+                    {template.displayName}
+                  </option>
+                ))}
+              </select>
+              {isLoadingContent && (
+                <span className="template-loading-indicator" aria-hidden="true">
+                  Loading...
+                </span>
+              )}
+            </div>
+            {templateError && (
+              <div id="template-error" className="template-error" role="alert" data-testid="template-error">
+                <span className="error-icon" aria-hidden="true">⚠</span>
+                <span className="error-text">{templateError}</span>
+              </div>
+            )}
           </div>
 
           <div className="system-message-text">

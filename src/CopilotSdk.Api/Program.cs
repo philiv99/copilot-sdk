@@ -76,6 +76,7 @@ builder.Services.AddScoped<ICopilotClientService, CopilotClientService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IPromptRefinementService, PromptRefinementService>();
 builder.Services.AddScoped<IModelsService, ModelsService>();
+builder.Services.AddScoped<ISystemPromptTemplateService, SystemPromptTemplateService>();
 
 // Register hosted service for automatic client startup/shutdown
 builder.Services.AddHostedService<CopilotClientHostedService>();

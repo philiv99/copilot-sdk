@@ -122,3 +122,31 @@ export interface SessionListResponse {
  * Session status values.
  */
 export type SessionStatus = 'Active' | 'Idle' | 'Error' | 'Deleted';
+
+/**
+ * System prompt template information.
+ */
+export interface SystemPromptTemplate {
+  /** The unique name of the template (folder name). */
+  name: string;
+  /** A display-friendly name. */
+  displayName: string;
+}
+
+/**
+ * Response containing a list of system prompt templates.
+ */
+export interface SystemPromptTemplatesResponse {
+  /** The list of available templates. */
+  templates: SystemPromptTemplate[];
+}
+
+/**
+ * Response containing the content of a system prompt template.
+ */
+export interface SystemPromptTemplateContentResponse {
+  /** The name of the template. */
+  name: string;
+  /** The content of the template (copilot-instructions.md). */
+  content: string;
+}
