@@ -7,8 +7,9 @@ public interface IDevServerService
 {
     /// <summary>
     /// Starts the Vite dev server for a session's app.
+    /// Returns the actual URL extracted from the process output.
     /// </summary>
-    Task<(bool success, int port, string message)> StartDevServerAsync(string sessionId, string appPath, CancellationToken cancellationToken = default);
+    Task<(bool success, int port, string url, string message)> StartDevServerAsync(string sessionId, string appPath, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Stops the dev server for a session.

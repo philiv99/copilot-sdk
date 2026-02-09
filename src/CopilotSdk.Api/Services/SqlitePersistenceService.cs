@@ -179,6 +179,20 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
                 _logger.LogInformation("Migrated Sessions table: added CreatorUserId column");
             }
 
+            // Migration: Add AppPath column to Sessions if it doesn't exist
+            using var migrateAppPathCmd = connection.CreateCommand();
+            migrateAppPathCmd.Transaction = transaction;
+            migrateAppPathCmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Sessions') WHERE name='AppPath';";
+            var hasAppPathColumn = (long)(migrateAppPathCmd.ExecuteScalar() ?? 0L) > 0;
+            if (!hasAppPathColumn)
+            {
+                using var alterAppPathCmd = connection.CreateCommand();
+                alterAppPathCmd.Transaction = transaction;
+                alterAppPathCmd.CommandText = "ALTER TABLE Sessions ADD COLUMN AppPath TEXT;";
+                alterAppPathCmd.ExecuteNonQuery();
+                _logger.LogInformation("Migrated Sessions table: added AppPath column");
+            }
+
             transaction.Commit();
             _logger.LogInformation("SQLite database initialized at {DataDirectory}", _dataDirectory);
         }
@@ -263,8 +277,8 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
             using var sessionCmd = connection.CreateCommand();
             sessionCmd.Transaction = transaction;
             sessionCmd.CommandText = @"
-                INSERT INTO Sessions (SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, UpdatedAt)
-                VALUES (@sessionId, @createdAt, @lastActivityAt, @messageCount, @summary, @isRemote, @configJson, @creatorUserId, @updatedAt)
+                INSERT INTO Sessions (SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, AppPath, UpdatedAt)
+                VALUES (@sessionId, @createdAt, @lastActivityAt, @messageCount, @summary, @isRemote, @configJson, @creatorUserId, @appPath, @updatedAt)
                 ON CONFLICT(SessionId) DO UPDATE SET
                     LastActivityAt = @lastActivityAt,
                     MessageCount = @messageCount,
@@ -272,6 +286,7 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
                     IsRemote = @isRemote,
                     ConfigJson = @configJson,
                     CreatorUserId = COALESCE(@creatorUserId, CreatorUserId),
+                    AppPath = COALESCE(@appPath, AppPath),
                     UpdatedAt = @updatedAt;
             ";
             sessionCmd.Parameters.AddWithValue("@sessionId", sessionData.SessionId);
@@ -282,6 +297,7 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
             sessionCmd.Parameters.AddWithValue("@isRemote", sessionData.IsRemote ? 1 : 0);
             sessionCmd.Parameters.AddWithValue("@configJson", sessionData.Config != null ? JsonSerializer.Serialize(sessionData.Config, JsonOptions) : (object)DBNull.Value);
             sessionCmd.Parameters.AddWithValue("@creatorUserId", (object?)sessionData.CreatorUserId ?? DBNull.Value);
+            sessionCmd.Parameters.AddWithValue("@appPath", (object?)sessionData.AppPath ?? DBNull.Value);
             sessionCmd.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow.ToString("O"));
 
             await Task.Run(() => sessionCmd.ExecuteNonQuery(), cancellationToken);
@@ -319,7 +335,7 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
 
             // Load session metadata
             using var sessionCmd = connection.CreateCommand();
-            sessionCmd.CommandText = "SELECT SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId FROM Sessions WHERE SessionId = @sessionId;";
+            sessionCmd.CommandText = "SELECT SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, AppPath FROM Sessions WHERE SessionId = @sessionId;";
             sessionCmd.Parameters.AddWithValue("@sessionId", sessionId);
 
             PersistedSessionData? sessionData = null;
@@ -359,7 +375,7 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
         {
             using var connection = CreateConnection();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId FROM Sessions ORDER BY CreatedAt DESC;";
+            cmd.CommandText = "SELECT SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, AppPath FROM Sessions ORDER BY CreatedAt DESC;";
 
             using var reader = await Task.Run(() => cmd.ExecuteReader(), cancellationToken);
             while (await Task.Run(() => reader.Read(), cancellationToken))
@@ -649,6 +665,14 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
             CreatorUserId = reader.IsDBNull(reader.GetOrdinal("CreatorUserId")) ? null : reader.GetString(reader.GetOrdinal("CreatorUserId")),
             Messages = new List<PersistedMessage>()
         };
+
+        // AppPath may not exist in older databases
+        try
+        {
+            var appPathOrdinal = reader.GetOrdinal("AppPath");
+            sessionData.AppPath = reader.IsDBNull(appPathOrdinal) ? null : reader.GetString(appPathOrdinal);
+        }
+        catch (Exception) { /* column doesn't exist yet */ }
 
         if (!reader.IsDBNull(reader.GetOrdinal("ConfigJson")))
         {

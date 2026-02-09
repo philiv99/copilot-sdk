@@ -392,6 +392,29 @@ public class SessionsController : ControllerBase
     }
 
     /// <summary>
+    /// Sets or updates the app path for a session.
+    /// </summary>
+    /// <param name="sessionId">The session ID.</param>
+    /// <param name="appPath">The absolute path to the app directory.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPut("{sessionId}/app-path")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> SetAppPath(
+        string sessionId,
+        [FromBody] SetAppPathRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request?.AppPath))
+            return BadRequest(new ProblemDetails { Title = "Invalid Request", Detail = "appPath is required", Status = StatusCodes.Status400BadRequest });
+
+        _logger.LogDebug("Setting app path for session {SessionId} to {AppPath}", sessionId, request.AppPath);
+        await _sessionService.SetAppPathAsync(sessionId, request.AppPath, cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>
     /// Gets the status of the development server for a session.
     /// </summary>
     /// <param name="sessionId">The session ID.</param>

@@ -66,6 +66,17 @@ public class SessionService : ISessionService
         // Register the session in the SessionManager (persists to disk)
         await _sessionManager.RegisterSessionAsync(session.SessionId, session, config, creatorUserId, cancellationToken);
 
+        // Store the app path if provided
+        if (!string.IsNullOrWhiteSpace(request.AppPath))
+        {
+            var metadata2 = await _sessionManager.GetMetadataAsync(session.SessionId, cancellationToken);
+            if (metadata2 != null)
+            {
+                metadata2.AppPath = request.AppPath;
+                await _sessionManager.PersistSessionAsync(session.SessionId, metadata2, cancellationToken);
+            }
+        }
+
         var metadata = await _sessionManager.GetMetadataAsync(session.SessionId, cancellationToken);
 
         return new SessionInfoResponse
@@ -657,7 +668,7 @@ public class SessionService : ISessionService
         {
             Success = result.success,
             Port = result.port,
-            Url = result.success ? _devServerService.GetDevServerUrl(result.port) : string.Empty,
+            Url = result.success ? result.url : string.Empty,
             Message = result.message
         };
     }
@@ -689,20 +700,32 @@ public class SessionService : ISessionService
         };
     }
 
+    /// <inheritdoc/>
+    public async Task SetAppPathAsync(string sessionId, string appPath, CancellationToken cancellationToken = default)
+    {
+        var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken)
+            ?? throw new InvalidOperationException($"Session {sessionId} not found");
+
+        metadata.AppPath = appPath;
+        await _sessionManager.PersistSessionAsync(sessionId, metadata, cancellationToken);
+    }
+
     /// <summary>
     /// Attempts to find the app path for a session by checking common locations.
     /// </summary>
     private Task<string> FindAppPathAsync(string sessionId, CancellationToken cancellationToken)
     {
-        // Try common locations
+        var reposDir = @"C:\development\repos";
+        var normalizedSessionId = NormalizeName(sessionId);
+
+        // 1. Try exact match by session ID
         var possiblePaths = new[]
         {
-            Path.Combine(@"C:\development\repos", sessionId),
-            Path.Combine(@"C:\development\repos", sessionId.ToLowerInvariant()),
-            Path.Combine(@"C:\development\repos", sessionId.Replace("_", "-")),
+            Path.Combine(reposDir, sessionId),
+            Path.Combine(reposDir, sessionId.ToLowerInvariant()),
+            Path.Combine(reposDir, sessionId.Replace("_", "-")),
         };
 
-        // Check each path for package.json
         foreach (var path in possiblePaths)
         {
             if (Directory.Exists(path) && File.Exists(Path.Combine(path, "package.json")))
@@ -712,16 +735,76 @@ public class SessionService : ISessionService
             }
         }
 
-        // If not found in standard locations, search the repos directory
-        var reposDir = @"C:\development\repos";
+        // 2. Check inside the copilot-sdk project for embedded apps (e.g. HelicoptorGame)
+        var projectRoot = Path.GetDirectoryName(AppContext.BaseDirectory);
+        // Walk up to find the src directory
+        var currentDir = projectRoot;
+        while (currentDir != null)
+        {
+            var apiDir = Path.Combine(currentDir, "src", "CopilotSdk.Api");
+            if (Directory.Exists(apiDir))
+            {
+                // Check if session ID matches a subdirectory under the API project
+                var embeddedPath = Path.Combine(apiDir, sessionId);
+                if (Directory.Exists(embeddedPath) && File.Exists(Path.Combine(embeddedPath, "package.json")))
+                {
+                    _logger.LogInformation("Found embedded app for session {SessionId} at {Path}", sessionId, embeddedPath);
+                    return Task.FromResult(embeddedPath);
+                }
+
+                // Also check subdirectories for fuzzy match 
+                foreach (var dir in Directory.GetDirectories(apiDir))
+                {
+                    if (File.Exists(Path.Combine(dir, "package.json")) &&
+                        NormalizeName(Path.GetFileName(dir)) == normalizedSessionId)
+                    {
+                        _logger.LogInformation("Found embedded app for session {SessionId} at {Path} (fuzzy)", sessionId, dir);
+                        return Task.FromResult(dir);
+                    }
+                }
+
+                break;
+            }
+            currentDir = Path.GetDirectoryName(currentDir);
+        }
+
+        // Also check directly from the known project structure path
+        var knownProjectPaths = new[]
+        {
+            Path.Combine(reposDir, "copilot-sdk", "src", "CopilotSdk.Api", sessionId),
+        };
+        foreach (var path in knownProjectPaths)
+        {
+            if (Directory.Exists(path) && File.Exists(Path.Combine(path, "package.json")))
+            {
+                _logger.LogInformation("Found app for session {SessionId} at {Path}", sessionId, path);
+                return Task.FromResult(path);
+            }
+        }
+
+        // 3. Fuzzy match across all repos: bidirectional substring + normalized name comparison
         if (Directory.Exists(reposDir))
         {
             var directories = Directory.GetDirectories(reposDir);
+            
+            // First pass: normalized name equality
             foreach (var dir in directories)
             {
                 var dirName = Path.GetFileName(dir);
-                // Check if directory name contains session id (case insensitive)
-                if (dirName.Contains(sessionId, StringComparison.OrdinalIgnoreCase) &&
+                if (NormalizeName(dirName) == normalizedSessionId &&
+                    File.Exists(Path.Combine(dir, "package.json")))
+                {
+                    _logger.LogInformation("Found app for session {SessionId} at {Path} (normalized match)", sessionId, dir);
+                    return Task.FromResult(dir);
+                }
+            }
+
+            // Second pass: bidirectional substring match
+            foreach (var dir in directories)
+            {
+                var dirName = Path.GetFileName(dir);
+                if ((dirName.Contains(sessionId, StringComparison.OrdinalIgnoreCase) ||
+                     sessionId.Contains(dirName, StringComparison.OrdinalIgnoreCase)) &&
                     File.Exists(Path.Combine(dir, "package.json")))
                 {
                     _logger.LogInformation("Found app for session {SessionId} at {Path} (fuzzy match)", sessionId, dir);
@@ -731,6 +814,18 @@ public class SessionService : ISessionService
         }
 
         // Default to the session ID path even if it doesn't exist (will fail with proper error)
-        return Task.FromResult(Path.Combine(@"C:\development\repos", sessionId));
+        return Task.FromResult(Path.Combine(reposDir, sessionId));
+    }
+
+    /// <summary>
+    /// Normalizes a name by lowering, removing common suffixes/words, and stripping non-alphanumeric chars.
+    /// </summary>
+    private static string NormalizeName(string name)
+    {
+        var lower = name.ToLowerInvariant();
+        // Remove common suffixes/words that vary between session IDs and repo names
+        lower = lower.Replace("game", "").Replace("app", "").Replace("the", "")
+                     .Replace("-", "").Replace("_", "").Replace(" ", "");
+        return lower;
     }
 }

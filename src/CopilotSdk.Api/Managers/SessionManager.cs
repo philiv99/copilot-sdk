@@ -435,6 +435,7 @@ public class SessionManager
             Summary = sessionData.Summary,
             IsRemote = sessionData.IsRemote,
             CreatorUserId = sessionData.CreatorUserId,
+            AppPath = sessionData.AppPath,
             Config = sessionData.Config != null ? ConvertToSessionConfig(sessionData.Config) : null
         };
     }
@@ -488,6 +489,7 @@ public class SessionManager
             Summary = metadata.Summary,
             IsRemote = metadata.IsRemote,
             CreatorUserId = metadata.CreatorUserId,
+            AppPath = metadata.AppPath,
             Config = metadata.Config != null ? ConvertToPersistedConfig(metadata.Config) : null,
             Messages = new List<PersistedMessage>()
         };

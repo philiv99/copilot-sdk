@@ -48,6 +48,11 @@ public class PersistedSessionData
     public PersistedSessionConfig? Config { get; set; }
 
     /// <summary>
+    /// Local repository/app path for the session's app.
+    /// </summary>
+    public string? AppPath { get; set; }
+
+    /// <summary>
     /// All messages in the session conversation.
     /// </summary>
     public List<PersistedMessage> Messages { get; set; } = new();

@@ -66,4 +66,10 @@ public class CreateSessionRequest : IValidatableObject
     /// Custom tool definitions for this session.
     /// </summary>
     public List<ToolDefinition>? Tools { get; set; }
+
+    /// <summary>
+    /// Local path to the app's git repository / project directory.
+    /// Used by the dev server to locate and serve the app.
+    /// </summary>
+    public string? AppPath { get; set; }
 }

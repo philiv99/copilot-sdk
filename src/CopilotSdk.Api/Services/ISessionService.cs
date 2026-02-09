@@ -100,4 +100,12 @@ public interface ISessionService
     /// Gets the status of the development server for a session.
     /// </summary>
     Task<DevServerStatusResponse> GetDevServerStatusAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets the app path for a session, used by the dev server to locate the app.
+    /// </summary>
+    /// <param name="sessionId">The session ID.</param>
+    /// <param name="appPath">The absolute path to the app directory.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task SetAppPathAsync(string sessionId, string appPath, CancellationToken cancellationToken = default);
 }

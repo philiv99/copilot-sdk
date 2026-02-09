@@ -47,6 +47,7 @@ export function CreateSessionModal({
   const [systemMessage, setSystemMessage] = useState<SystemMessageConfig | undefined>(undefined);
   const [tools, setTools] = useState<ToolDefinition[]>([]);
   const [provider, setProvider] = useState<ProviderConfig | undefined>(undefined);
+  const [appPath, setAppPath] = useState('');
   
   // UI state
   const [activeTab, setActiveTab] = useState<TabType>('basic');
@@ -61,6 +62,7 @@ export function CreateSessionModal({
     setSystemMessage(undefined);
     setTools([]);
     setProvider(undefined);
+    setAppPath('');
     setActiveTab('basic');
     setError(null);
   }, []);
@@ -120,6 +122,9 @@ export function CreateSessionModal({
       if (provider) {
         request.provider = provider;
       }
+      if (appPath.trim()) {
+        request.appPath = appPath.trim();
+      }
 
       const result = await createSession(request);
       resetForm();
@@ -129,7 +134,7 @@ export function CreateSessionModal({
     } finally {
       setIsSubmitting(false);
     }
-  }, [model, streaming, sessionId, systemMessage, tools, provider, createSession, resetForm, onSessionCreated, isValidSessionId]);
+  }, [model, streaming, sessionId, systemMessage, tools, provider, appPath, createSession, resetForm, onSessionCreated, isValidSessionId]);
 
   // Modal is a true modal - no backdrop click or escape key dismissal
   // Can only be closed via Cancel or X button inside the form
@@ -245,6 +250,25 @@ export function CreateSessionModal({
                   </label>
                   <span className="form-hint">
                     Stream responses in real-time as they are generated
+                  </span>
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="app-path" className="form-label">
+                    App Path (Optional)
+                  </label>
+                  <input
+                    id="app-path"
+                    type="text"
+                    className="form-input"
+                    value={appPath}
+                    onChange={(e) => setAppPath(e.target.value)}
+                    placeholder="e.g. C:\development\repos\my-app"
+                    disabled={isLoading}
+                    data-testid="app-path-input"
+                  />
+                  <span className="form-hint">
+                    Path to the app's local git repository for the dev server. If empty, it will be auto-detected.
                   </span>
                 </div>
               </div>

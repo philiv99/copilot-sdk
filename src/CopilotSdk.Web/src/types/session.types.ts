@@ -74,6 +74,8 @@ export interface CreateSessionRequest {
   provider?: ProviderConfig;
   /** Custom tool definitions for this session. */
   tools?: ToolDefinition[];
+  /** Local path to the app's git repository / project directory. */
+  appPath?: string;
 }
 
 /**

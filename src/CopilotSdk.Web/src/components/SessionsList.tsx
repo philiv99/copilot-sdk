@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSession, useUser } from '../context';
 import { SessionInfoResponse } from '../types';
 import { Spinner, CardSkeleton } from './Loading';
-import { startDevServer } from '../api/copilotApi';
+import { startDevServer, setSessionAppPath } from '../api/copilotApi';
 import './SessionsList.css';
 
 /**
@@ -141,22 +141,77 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
   const handlePlay = useCallback(async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     setPlayingId(sessionId);
+
+    // Open a blank tab immediately (synchronous from user gesture) to avoid popup blocker
+    const newTab = window.open('about:blank', '_blank');
     
+    const openUrl = (url: string) => {
+      if (newTab && !newTab.closed) {
+        newTab.location.href = url;
+      } else {
+        // Fallback: if the tab was closed or blocked, navigate current page
+        window.open(url, '_blank');
+      }
+    };
+
+    const closeTab = () => {
+      if (newTab && !newTab.closed) {
+        newTab.close();
+      }
+    };
+
     try {
-      // Start dev server
+      // Start dev server — the backend waits for the actual URL from npm output
       const result = await startDevServer(sessionId);
       
       if (result.success) {
-        // Wait a moment for server to be ready, then open
-        setTimeout(() => {
-          window.open(result.url, '_blank');
-        }, 2000);
+        openUrl(result.url);
+      } else if (result.message?.includes('not found') || result.message?.includes('No package.json')) {
+        closeTab();
+        // Path not found — prompt user to provide the correct path
+        const userPath = prompt(
+          `Could not auto-detect the app directory for "${sessionId}".\n\n` +
+          `Please enter the full path to the app folder (must contain package.json):`
+        );
+        if (userPath) {
+          await setSessionAppPath(sessionId, userPath.trim());
+          const retryResult = await startDevServer(sessionId, userPath.trim());
+          if (retryResult.success) {
+            window.open(retryResult.url, '_blank');
+          } else {
+            alert(`Failed to start app: ${retryResult.message}`);
+          }
+        }
       } else {
+        closeTab();
         alert(`Failed to start app: ${result.message}`);
       }
     } catch (error) {
-      console.error('Error starting dev server:', error);
-      alert(`Error starting app: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      closeTab();
+      // If the error message indicates path not found, prompt for path
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      if (errorMsg.includes('not found') || errorMsg.includes('No package.json')) {
+        const userPath = prompt(
+          `Could not auto-detect the app directory for "${sessionId}".\n\n` +
+          `Please enter the full path to the app folder (must contain package.json):`
+        );
+        if (userPath) {
+          try {
+            await setSessionAppPath(sessionId, userPath.trim());
+            const retryResult = await startDevServer(sessionId, userPath.trim());
+            if (retryResult.success) {
+              window.open(retryResult.url, '_blank');
+            } else {
+              alert(`Failed to start app: ${retryResult.message}`);
+            }
+          } catch (retryError) {
+            alert(`Error starting app: ${retryError instanceof Error ? retryError.message : 'Unknown error'}`);
+          }
+        }
+      } else {
+        console.error('Error starting dev server:', error);
+        alert(`Error starting app: ${errorMsg}`);
+      }
     } finally {
       setPlayingId(null);
     }

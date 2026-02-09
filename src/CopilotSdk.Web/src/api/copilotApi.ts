@@ -402,6 +402,19 @@ export async function startDevServer(sessionId: string, appPath?: string): Promi
 }
 
 /**
+ * Set or update the app path for a session.
+ * @param sessionId The session ID.
+ * @param appPath The absolute path to the app directory.
+ */
+export async function setSessionAppPath(sessionId: string, appPath: string): Promise<void> {
+  try {
+    await apiClient.put(`/sessions/${sessionId}/app-path`, { appPath });
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+/**
  * Stop the development server for a session.
  * @param sessionId The session ID.
  */
