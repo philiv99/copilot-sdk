@@ -81,4 +81,19 @@ public interface ISessionService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Response containing the session's persisted message history.</returns>
     Task<PersistedMessagesResponse> GetPersistedHistoryAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Starts the development server for a session's app.
+    /// </summary>
+    Task<DevServerResponse> StartDevServerAsync(string sessionId, string? appPath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stops the development server for a session.
+    /// </summary>
+    Task StopDevServerAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the status of the development server for a session.
+    /// </summary>
+    Task<DevServerStatusResponse> GetDevServerStatusAsync(string sessionId, CancellationToken cancellationToken = default);
 }

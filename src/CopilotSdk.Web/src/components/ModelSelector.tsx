@@ -9,11 +9,13 @@ import './ModelSelector.css';
 
 /**
  * Default models used as fallback when API is unavailable.
+ * Keep in sync with models.json in the backend.
  */
 const DEFAULT_MODELS: ModelInfo[] = [
-  { value: 'gpt-4o', label: 'GPT-4o', description: 'Most capable model for complex tasks' },
+  { value: 'gpt-4o', label: 'GPT-4o', description: 'Most capable GPT-4o model for complex tasks' },
   { value: 'gpt-4o-mini', label: 'GPT-4o Mini', description: 'Fast and efficient for simpler tasks' },
-  { value: 'claude-opus-4.5', label: 'Claude Opuse 4.5', description: 'Best performance and speed' },
+  { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', description: 'Balanced performance and speed from Anthropic' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', description: 'Google\'s most capable model' },
 ];
 
 /**

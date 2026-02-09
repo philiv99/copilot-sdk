@@ -6,9 +6,11 @@ import * as signalR from '@microsoft/signalr';
 import { SessionEvent, StreamingDelta } from '../types';
 
 /**
- * SignalR hub URL - direct communication with backend.
+ * SignalR hub URL.
+ * Reads from REACT_APP_SIGNALR_URL environment variable (set in .env).
+ * Falls back to localhost for development.
  */
-const HUB_URL = 'http://localhost:5139/hubs/session';
+const HUB_URL = process.env.REACT_APP_SIGNALR_URL || 'http://localhost:5139/hubs/session';
 
 /**
  * Connection state for the SignalR hub.

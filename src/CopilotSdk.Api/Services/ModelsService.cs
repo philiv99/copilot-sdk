@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CopilotSdk.Api.Managers;
 using CopilotSdk.Api.Models.Responses;
 using Microsoft.Extensions.Caching.Memory;
@@ -5,7 +6,18 @@ using Microsoft.Extensions.Caching.Memory;
 namespace CopilotSdk.Api.Services;
 
 /// <summary>
+/// JSON structure for models.json configuration file.
+/// </summary>
+internal class ModelsConfigFile
+{
+    public DateTime LastUpdated { get; set; }
+    public List<ModelInfo> Models { get; set; } = new();
+}
+
+/// <summary>
 /// Service for retrieving available AI models from the Copilot SDK.
+/// Loads the default model list from an external models.json configuration file,
+/// falling back to a minimal hardcoded list only if the file is missing or unreadable.
 /// Caches the models list for one week.
 /// </summary>
 public class ModelsService : IModelsService
@@ -13,120 +25,31 @@ public class ModelsService : IModelsService
     private const string CacheKey = "AvailableModels";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromDays(7);
 
+    /// <summary>
+    /// Relative path to the external models configuration file.
+    /// Can be overridden in tests.
+    /// </summary>
+    internal static string ModelsConfigPath = "models.json";
+
     private readonly ICopilotClientManager _clientManager;
     private readonly IMemoryCache _cache;
     private readonly ILogger<ModelsService> _logger;
 
     /// <summary>
-    /// Default models list used when the SDK doesn't provide a models endpoint
-    /// or when the client is not connected.
+    /// Minimal hardcoded fallback used only when the external models.json file
+    /// cannot be loaded (missing, corrupt, or inaccessible).
     /// </summary>
-    private static readonly List<ModelInfo> DefaultModels = new()
+    private static readonly List<ModelInfo> HardcodedFallbackModels = new()
     {
-       
-        new ModelInfo
-        {
-            Value = "gpt-4o",
-            Label = "GPT-4o",
-            Description = "Most capable model for complex tasks"
-        },
-        new ModelInfo
-        {
-            Value = "gpt-4o-mini",
-            Label = "GPT-4o Mini",
-            Description = "Fast and efficient for simpler tasks"
-        },
-        new ModelInfo
-        {
-            Value = "gpt-4.1",
-            Label = "GPT-4.1",
-            Description = "Advanced GPT-4 variant with improved performance"
-        },
-        new ModelInfo
-        {
-            Value = "gpt-4.1-mini",
-            Label = "GPT-4.1 Mini",
-            Description = "Efficient GPT-4.1 variant for faster responses"
-        },
-        new ModelInfo
-        {
-            Value = "gpt-4.1-nano",
-            Label = "GPT-4.1 Nano",
-            Description = "Lightweight GPT-4.1 for quick tasks"
-        },
-        new ModelInfo
-        {
-            Value = "o1",
-            Label = "O1",
-            Description = "Advanced reasoning model for complex problems"
-        },
-        new ModelInfo
-        {
-            Value = "o1-mini",
-            Label = "O1 Mini",
-            Description = "Efficient reasoning model"
-        },
-        new ModelInfo
-        {
-            Value = "o1-pro",
-            Label = "O1 Pro",
-            Description = "Professional-grade reasoning model"
-        },
-        new ModelInfo
-        {
-            Value = "o3",
-            Label = "O3",
-            Description = "Latest reasoning model with enhanced capabilities"
-        },
-        new ModelInfo
-        {
-            Value = "o3-mini",
-            Label = "O3 Mini",
-            Description = "Compact O3 model for everyday reasoning"
-        },
-        new ModelInfo
-        {
-            Value = "o4-mini",
-            Label = "O4 Mini",
-            Description = "Next-generation compact reasoning model"
-        },
-        new ModelInfo
-        {
-            Value = "claude-sonnet-4",
-            Label = "Claude Sonnet 4",
-            Description = "Balanced performance and speed from Anthropic"
-        },
-        new ModelInfo
-        {
-            Value = "claude-3.5-sonnet",
-            Label = "Claude 3.5 Sonnet",
-            Description = "Balanced Claude model for general tasks"
-        },
-        new ModelInfo
-        {
-            Value = "claude-3.7-sonnet",
-            Label = "Claude 3.7 Sonnet",
-            Description = "Enhanced Claude model with improved reasoning"
-        }, 
-        new ModelInfo
-        {
-            Value = "claude-opus-4.5",
-            Label = "Claude Opus 4.5",
-            Description = "Most capable model for complex tasks"
-        },
-        new ModelInfo
-        {
-            Value = "gemini-2.0-flash",
-            Label = "Gemini 2.0 Flash",
-            Description = "Google's fast multimodal model"
-        },
-        new ModelInfo
-        {
-            Value = "gemini-2.5-pro",
-            Label = "Gemini 2.5 Pro",
-            Description = "Google's most capable model"
-        }
+        new ModelInfo { Value = "gpt-4o", Label = "GPT-4o", Description = "Most capable GPT-4o model for complex tasks" },
+        new ModelInfo { Value = "claude-sonnet-4", Label = "Claude Sonnet 4", Description = "Balanced performance and speed from Anthropic" },
+        new ModelInfo { Value = "gemini-2.5-pro", Label = "Gemini 2.5 Pro", Description = "Google's most capable model" },
     };
+
+    /// <summary>
+    /// Timestamp from the last successfully loaded models.json file.
+    /// </summary>
+    private DateTime? _modelsFileLastUpdated;
 
     public ModelsService(
         ICopilotClientManager clientManager,
@@ -158,6 +81,46 @@ public class ModelsService : IModelsService
         return await FetchAndCacheModelsAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Loads models from the external models.json configuration file.
+    /// Falls back to <see cref="HardcodedFallbackModels"/> if the file cannot be read.
+    /// </summary>
+    internal List<ModelInfo> LoadModelsFromConfig()
+    {
+        try
+        {
+            var filePath = Path.Combine(AppContext.BaseDirectory, ModelsConfigPath);
+            if (!File.Exists(filePath))
+            {
+                _logger.LogWarning("Models config file not found at {Path}, using hardcoded fallback", filePath);
+                return HardcodedFallbackModels;
+            }
+
+            var json = File.ReadAllText(filePath);
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var config = JsonSerializer.Deserialize<ModelsConfigFile>(json, options);
+
+            if (config?.Models == null || config.Models.Count == 0)
+            {
+                _logger.LogWarning("Models config file at {Path} is empty or invalid, using hardcoded fallback", filePath);
+                return HardcodedFallbackModels;
+            }
+
+            _modelsFileLastUpdated = config.LastUpdated;
+            _logger.LogInformation(
+                "Loaded {Count} models from config file (last updated {LastUpdated})",
+                config.Models.Count,
+                config.LastUpdated);
+
+            return config.Models;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error reading models config file, using hardcoded fallback");
+            return HardcodedFallbackModels;
+        }
+    }
+
     private async Task<ModelsResponse> FetchAndCacheModelsAsync(CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
@@ -172,15 +135,15 @@ public class ModelsService : IModelsService
             if (status.IsConnected)
             {
                 // Currently the SDK doesn't have a GetModels method,
-                // so we use the default list. When the SDK adds this capability,
-                // we can extend ICopilotClientManager to expose GetModelsAsync.
-                _logger.LogDebug("Client is connected, using default models list (SDK doesn't have GetModels endpoint yet)");
-                models = DefaultModels;
+                // so we load from the external config file.
+                // When the SDK adds this capability, we can call it here instead.
+                _logger.LogDebug("Client is connected, loading models from config file (SDK doesn't have GetModels endpoint yet)");
+                models = LoadModelsFromConfig();
             }
             else
             {
-                _logger.LogDebug("Client is not connected, using default models list");
-                models = DefaultModels;
+                _logger.LogDebug("Client is not connected, loading models from config file");
+                models = LoadModelsFromConfig();
             }
 
             // Simulate async operation for consistency
@@ -188,15 +151,16 @@ public class ModelsService : IModelsService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error fetching models from SDK, using default list");
-            models = DefaultModels;
+            _logger.LogWarning(ex, "Error fetching models, using hardcoded fallback list");
+            models = HardcodedFallbackModels;
         }
 
         var response = new ModelsResponse
         {
             Models = models,
             CachedAt = now,
-            ExpiresAt = expiresAt
+            ExpiresAt = expiresAt,
+            ModelsLastUpdated = _modelsFileLastUpdated
         };
 
         var cacheOptions = new MemoryCacheEntryOptions()

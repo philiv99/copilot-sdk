@@ -35,9 +35,10 @@ describe('ModelSelector', () => {
 
   const mockModelsResponse = {
     models: [
-      { value: 'gpt-4o', label: 'GPT-4o', description: 'Most capable model for complex tasks' },
+      { value: 'gpt-4o', label: 'GPT-4o', description: 'Most capable GPT-4o model for complex tasks' },
       { value: 'gpt-4o-mini', label: 'GPT-4o Mini', description: 'Fast and efficient for simpler tasks' },
-      { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', description: 'Balanced performance and speed' },
+      { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', description: 'Balanced performance and speed from Anthropic' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', description: 'Google\'s most capable model' },
     ],
     cachedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -138,7 +139,7 @@ describe('ModelSelector', () => {
 
     it('shows correct description for selected model', () => {
       render(<ModelSelector value="gpt-4o" onChange={mockOnChange} showDescriptions={true} />);
-      expect(screen.getByText('Most capable model for complex tasks')).toBeInTheDocument();
+      expect(screen.getByText('Most capable GPT-4o model for complex tasks')).toBeInTheDocument();
     });
   });
 

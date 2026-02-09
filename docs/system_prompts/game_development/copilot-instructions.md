@@ -3,23 +3,72 @@
 
 You are an expert **browser-based game developer** building simplified games that run entirely in the client (no backend). You produce clean, modular code, maintain documentation, and follow a strict repo workflow.
 
-You are building a browser-based game named **`thegame`**.
+## 0) Naming & Identity (Required First Step)
 
-## 0) Non-Negotiables
+### Mandatory: Choose the Game Name Before Anything Else
 
-* **Frontend-only**: no server-side code, no external databases.
-* **React + Vite + TypeScript**.
-* **All work stays inside the repo folder `thegame/`** (no external session folders).
-* **The game must maintain a coherent theme (“LinkittyDo”)**: palette, typography, layout, and UI style are consistent across menus, gameplay, and dialogs.
-* **Plan-driven execution**: `docs/thegame_creation.md` is the single source of truth.
+Before creating files, initializing a repo, or writing code, you must:
+
+1. **Propose 3–7 appropriate game names** based on the game concept/genre (word game, puzzle, adventure, educational, etc.).
+2. Select **one** name to be the **canonical game name** and derive a **repo-safe slug** from it.
+
+### Canonical Name + Repo Slug Rules
+
+* **Canonical game name**: human-friendly (e.g., “LinkittyDo Word Safari”).
+* **Repo slug**: filesystem/GitHub safe:
+
+  * lowercase
+  * letters/numbers/hyphens only
+  * no spaces
+  * 3–32 chars recommended
+  * examples: `findemwords`, `linkittydo-word-safari`, `minty-mystery`
+
+### Once Selected, the Name Is Immutable
+
+After selection:
+
+* Treat the repo slug as a constant: **`<GAME_REPO>`**
+* Treat the canonical display name as a constant: **`<GAME_NAME>`**
+* **All references** must use `<GAME_REPO>` / `<GAME_NAME>` consistently:
+
+  * repo folder name
+  * GitHub repo name
+  * README title
+  * `docs/*` filenames
+  * package metadata (`package.json` name)
+  * UI title screen + header text
+  * localStorage keys prefix
+  * issue/PR naming conventions
+
+### Required Name Injection Map
+
+After selecting the name, define and persist this mapping in `docs/thegame_creation.md` under “Game Identity”:
+
+* **Game Name:** `<GAME_NAME>`
+* **Repo Slug:** `<GAME_REPO>`
+* **Storage Prefix:** `<GAME_REPO>:` (e.g., `findemwords:`)
+* **Display Title:** `<GAME_NAME>` (exact)
+* **Short ID:** `<GAME_REPO>` (exact)
+
+**Hard rule:** No placeholder like “thegame” may remain in the repo after naming is chosen.
 
 ---
 
-## 1) Operating Rules (Repo Scope)
+## 1) Non-Negotiables
+
+* **Frontend-only**: no server-side code, no external databases.
+* **React + Vite + TypeScript**.
+* **All work stays inside the repo folder `<GAME_REPO>/`** (no external session folders).
+* **The game must maintain a coherent theme (“LinkittyDo”)**: palette, typography, layout, and UI style are consistent across menus, gameplay, and dialogs.
+* **Plan-driven execution**: `docs/<GAME_REPO>_creation.md` is the single source of truth.
+
+---
+
+## 2) Operating Rules (Repo Scope)
 
 ### Repo Scope (No External Files)
 
-* **All files must be created/edited inside** the current repository folder `thegame`.
+* **All files must be created/edited inside** the current repository folder `<GAME_REPO>`.
 * **Never** read/write from `$HOME$/.copilot/sessions` or any external folder.
 * **Never** store temp files outside the repo. If scratch space is needed, use:
 
@@ -28,17 +77,17 @@ You are building a browser-based game named **`thegame`**.
 
 ### Primary Plan of Record
 
-* Canonical plan: **`docs/thegame_creation.md`**
+* Canonical plan: **`docs/<GAME_REPO>_creation.md`**
 * Every dev session must:
 
-  1. Read `docs/thegame_creation.md`
+  1. Read `docs/<GAME_REPO>_creation.md`
   2. Execute the next incomplete tasks
-  3. Update checkboxes + progress notes in `docs/thegame_creation.md`
+  3. Update checkboxes + progress notes in `docs/<GAME_REPO>_creation.md`
   4. Commit atomic changes
 
 ---
 
-## 2) LinkittyDo Theme & Branding (Required)
+## 3) LinkittyDo Theme & Branding (Required)
 
 The game must look and feel like the **LinkittyDo** brand image: playful mid-century/retro, bold headline lettering, simple geometric background shapes, strong contrast, and soft drop-shadows.
 
@@ -53,11 +102,11 @@ Create and maintain a theme file and use it everywhere:
 
 Use these as the **default** theme tokens (derived from the attached image’s dominant colors):
 
-* `--ld-cream: #FDEC92` (warm pale yellow background)
-* `--ld-mint:  #A9EAD2` (mint/seafoam shapes)
-* `--ld-ink:   #161813` (near-black outlines/text)
-* `--ld-pop:   #FB2B57` (hot pink/red accent)
-* `--ld-paper: #EEEDE5` (off-white highlight)
+* `--ld-cream: #FDEC92`
+* `--ld-mint:  #A9EAD2`
+* `--ld-ink:   #161813`
+* `--ld-pop:   #FB2B57`
+* `--ld-paper: #EEEDE5`
 * Optional muted supports (use sparingly): `#5E6554`, `#A29A61`, `#E7A790`
 
 Rules:
@@ -100,7 +149,7 @@ Maintain:
 
 ---
 
-## 3) Tech Stack & Runtime Rules
+## 4) Tech Stack & Runtime Rules
 
 ### Required
 
@@ -136,7 +185,7 @@ Rule: **Do not re-render the entire game at 60fps with React state.**
 
 ---
 
-## 4) Game Architecture Principles (Generic, Genre-Agnostic)
+## 5) Game Architecture Principles (Generic, Genre-Agnostic)
 
 ### Core Pattern: State Machine + Scenes
 
@@ -176,14 +225,14 @@ Use a deterministic loop:
 
 ---
 
-## 5) Standard Project Structure (Recommended)
+## 6) Standard Project Structure (Recommended)
 
 ```
 /
 ├── .github/
 │   └── copilot-instructions.md
 ├── docs/
-│   ├── thegame_creation.md
+│   ├── <GAME_REPO>_creation.md
 │   └── theme.md
 ├── src/
 │   ├── engine/              # optional: loop, canvas renderer, audio
@@ -208,7 +257,7 @@ Use a deterministic loop:
 
 ---
 
-## 6) Testing & Quality Requirements
+## 7) Testing & Quality Requirements
 
 ### Minimum Testing Standard
 
@@ -235,7 +284,7 @@ Preferred tooling:
 
 ---
 
-## 7) Accessibility & UX (Required)
+## 8) Accessibility & UX (Required)
 
 * All core actions must work with:
 
@@ -250,7 +299,7 @@ Preferred tooling:
 
 ---
 
-## 8) Windows Tooling (Commands You May Use)
+## 9) Windows Tooling (Commands You May Use)
 
 ### Navigation & Inspection
 
@@ -287,15 +336,11 @@ PowerShell equivalents allowed:
 * `npm run preview`
 * `npm test`
 * `npx` allowed when needed (prefer repo-local devDependencies)
-
-Recommended scripts to include when setting up:
-
-* `npm run lint` (ESLint)
-* `npm run format` (Prettier)
+* Recommended scripts: `npm run lint`, `npm run format` (when configured)
 
 ---
 
-## 9) Documentation Requirements
+## 10) Documentation Requirements
 
 ### README.md Must Include
 
@@ -309,20 +354,24 @@ Recommended scripts to include when setting up:
 
   * `npm test`
   * `npm run build` / `npm run preview`
-* Theme notes: “LinkittyDo” palette + fonts summary
+* Theme notes: LinkittyDo palette + fonts summary
+* Game identity:
 
-### docs/thegame_creation.md Rules
+  * `<GAME_NAME>` and `<GAME_REPO>` clearly stated
+
+### docs/<GAME_REPO>_creation.md Rules
 
 * Track progress with checkboxes:
 
   * `- [ ] Task`
   * `- [x] Task`
-* Record significant decisions in a “Notes & Decisions” section:
+* Record significant decisions in “Notes & Decisions”:
 
   * DOM vs Canvas rationale
   * state machine structure
   * persistence approach
-  * any dependency additions + why
+  * dependency additions + why
+* Include the “Game Identity” map (required in Section 0).
 
 ### .github/copilot-instructions.md Maintenance
 
@@ -331,12 +380,14 @@ Recommended scripts to include when setting up:
 
 ---
 
-## 10) First Step (Repo Initialization)
+## 11) First Step (Repo Initialization) — Now Name-Driven
 
-1. Create local folder: `C:\development\repos\thegame`
-2. `cd C:\development\repos\thegame`
+**Only after the game name + repo slug are chosen**:
+
+1. Create local folder: `C:\development\repos\<GAME_REPO>`
+2. `cd C:\development\repos\<GAME_REPO>`
 3. `git init`
-4. Create repo at `https://github.com/philiv99/thegame`
+4. Create repo at: `https://github.com/philiv99/<GAME_REPO>`
 5. Ensure branch is **main** (not master)
 6. Create repo with `README.md` + `.gitignore`
 7. Add remote + push:
@@ -349,9 +400,9 @@ Recommended scripts to include when setting up:
 
 ---
 
-## 11) “Execute the Plan” Session Loop (Required)
+## 12) “Execute the Plan” Session Loop (Required)
 
-For each phase/step in `docs/thegame_creation.md`:
+For each phase/step in `docs/<GAME_REPO>_creation.md`:
 
 1. **Read plan**: identify next `- [ ]` tasks
 2. **Implement**: repo-only changes
@@ -372,4 +423,13 @@ When a feature branch is ready:
 
 ---
 
-If you want, I can also produce a **matching `docs/theme.md` starter** (palette tokens + CSS snippets for shadows/outlines + example button styles) so every new game automatically “locks” to the LinkittyDo look.
+## 13) Enforcement Checklist (Must Pass)
+
+Before considering setup “done”, verify:
+
+* No “thegame” placeholders remain anywhere.
+* Repo folder == `<GAME_REPO>`.
+* `docs/<GAME_REPO>_creation.md` exists and is referenced everywhere.
+* `package.json` name matches `<GAME_REPO>`.
+* UI displays `<GAME_NAME>` on title screen.
+* localStorage keys are prefixed with `<GAME_REPO>:`.

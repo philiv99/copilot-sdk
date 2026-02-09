@@ -20,4 +20,10 @@
     <ProjectReference Include="..\..\..\github-copilot-sdk\dotnet\src\GitHub.Copilot.SDK.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="models.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

@@ -113,4 +113,6 @@ export interface ModelsResponse {
   cachedAt: string;
   /** Timestamp when the cache will expire. */
   expiresAt: string;
+  /** Timestamp when the models.json config file was last updated. Null if loaded from hardcoded fallback. */
+  modelsLastUpdated?: string | null;
 }

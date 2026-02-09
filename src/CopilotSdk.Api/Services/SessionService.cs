@@ -16,17 +16,20 @@ public class SessionService : ISessionService
     private readonly CopilotClientManager _clientManager;
     private readonly SessionManager _sessionManager;
     private readonly IToolExecutionService _toolExecutionService;
+    private readonly IDevServerService _devServerService;
     private readonly ILogger<SessionService> _logger;
 
     public SessionService(
         CopilotClientManager clientManager,
         SessionManager sessionManager,
         IToolExecutionService toolExecutionService,
+        IDevServerService devServerService,
         ILogger<SessionService> logger)
     {
         _clientManager = clientManager;
         _sessionManager = sessionManager;
         _toolExecutionService = toolExecutionService;
+        _devServerService = devServerService;
         _logger = logger;
     }
 
@@ -565,5 +568,110 @@ public class SessionService : ISessionService
         };
 
         return dto;
+    }
+
+    /// <inheritdoc/>
+    public async Task<DevServerResponse> StartDevServerAsync(string sessionId, string? appPath, CancellationToken cancellationToken = default)
+    {
+        // Get session metadata
+        var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
+        if (metadata == null)
+        {
+            throw new InvalidOperationException($"Session {sessionId} not found");
+        }
+
+        // Use provided appPath or try to infer from session metadata or search for the app
+        var targetPath = appPath ?? metadata.AppPath ?? await FindAppPathAsync(sessionId, cancellationToken);
+
+        var result = await _devServerService.StartDevServerAsync(sessionId, targetPath, cancellationToken);
+        
+        if (result.success)
+        {
+            // Update session metadata
+            metadata.AppPath = targetPath;
+            metadata.DevServerPort = result.port;
+            metadata.IsDevServerRunning = true;
+            await _sessionManager.PersistSessionAsync(sessionId, metadata, cancellationToken);
+        }
+
+        return new DevServerResponse
+        {
+            Success = result.success,
+            Port = result.port,
+            Url = result.success ? _devServerService.GetDevServerUrl(result.port) : string.Empty,
+            Message = result.message
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task StopDevServerAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        await _devServerService.StopDevServerAsync(sessionId, cancellationToken);
+        
+        var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
+        if (metadata != null)
+        {
+            metadata.IsDevServerRunning = false;
+            metadata.DevServerPort = null;
+            await _sessionManager.PersistSessionAsync(sessionId, metadata, cancellationToken);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<DevServerStatusResponse> GetDevServerStatusAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        var (isRunning, port) = await _devServerService.GetDevServerStatusAsync(sessionId, cancellationToken);
+        
+        return new DevServerStatusResponse
+        {
+            IsRunning = isRunning,
+            Port = port,
+            Url = isRunning && port.HasValue ? _devServerService.GetDevServerUrl(port.Value) : null
+        };
+    }
+
+    /// <summary>
+    /// Attempts to find the app path for a session by checking common locations.
+    /// </summary>
+    private Task<string> FindAppPathAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        // Try common locations
+        var possiblePaths = new[]
+        {
+            Path.Combine(@"C:\development\repos", sessionId),
+            Path.Combine(@"C:\development\repos", sessionId.ToLowerInvariant()),
+            Path.Combine(@"C:\development\repos", sessionId.Replace("_", "-")),
+        };
+
+        // Check each path for package.json
+        foreach (var path in possiblePaths)
+        {
+            if (Directory.Exists(path) && File.Exists(Path.Combine(path, "package.json")))
+            {
+                _logger.LogInformation("Found app for session {SessionId} at {Path}", sessionId, path);
+                return Task.FromResult(path);
+            }
+        }
+
+        // If not found in standard locations, search the repos directory
+        var reposDir = @"C:\development\repos";
+        if (Directory.Exists(reposDir))
+        {
+            var directories = Directory.GetDirectories(reposDir);
+            foreach (var dir in directories)
+            {
+                var dirName = Path.GetFileName(dir);
+                // Check if directory name contains session id (case insensitive)
+                if (dirName.Contains(sessionId, StringComparison.OrdinalIgnoreCase) &&
+                    File.Exists(Path.Combine(dir, "package.json")))
+                {
+                    _logger.LogInformation("Found app for session {SessionId} at {Path} (fuzzy match)", sessionId, dir);
+                    return Task.FromResult(dir);
+                }
+            }
+        }
+
+        // Default to the session ID path even if it doesn't exist (will fail with proper error)
+        return Task.FromResult(Path.Combine(@"C:\development\repos", sessionId));
     }
 }

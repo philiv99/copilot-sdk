@@ -72,6 +72,7 @@ builder.Services.AddSingleton<SessionEventDispatcher>(sp =>
 builder.Services.AddMemoryCache();
 
 builder.Services.AddSingleton<IToolExecutionService, ToolExecutionService>();
+builder.Services.AddSingleton<IDevServerService, DevServerService>();
 builder.Services.AddScoped<ICopilotClientService, CopilotClientService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IPromptRefinementService, PromptRefinementService>();

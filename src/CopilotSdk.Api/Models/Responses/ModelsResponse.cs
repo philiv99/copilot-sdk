@@ -40,4 +40,10 @@ public class ModelsResponse
     /// Timestamp when the cache will expire.
     /// </summary>
     public DateTime ExpiresAt { get; set; }
+
+    /// <summary>
+    /// Timestamp when the models.json configuration file was last updated.
+    /// Null if the models were loaded from the hardcoded fallback.
+    /// </summary>
+    public DateTime? ModelsLastUpdated { get; set; }
 }

@@ -359,6 +359,22 @@
   background-color: #2563eb;
 }
 
+.btn-success {
+  background-color: #2ea44f;
+  color: white;
+  border: 1px solid #2ea44f;
+}
+
+.btn-success:hover:not(:disabled) {
+  background-color: #2c974b;
+  border-color: #2c974b;
+}
+
+.btn-success:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .btn-secondary {
   background-color: #333;
   color: #e5e7eb;

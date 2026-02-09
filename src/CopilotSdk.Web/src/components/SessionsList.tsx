@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSession } from '../context';
 import { SessionInfoResponse } from '../types';
 import { Spinner, CardSkeleton } from './Loading';
+import { startDevServer } from '../api/copilotApi';
 import './SessionsList.css';
 
 /**
@@ -88,6 +89,7 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
 
   // Handle session click to select and navigate
   const handleSessionClick = useCallback(async (session: SessionInfoResponse) => {
@@ -133,6 +135,31 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
       setResumingId(null);
     }
   }, [resumeSession, selectSession, navigate]);
+
+  // Handle play button click - starts dev server and opens in new tab
+  const handlePlay = useCallback(async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    setPlayingId(sessionId);
+    
+    try {
+      // Start dev server
+      const result = await startDevServer(sessionId);
+      
+      if (result.success) {
+        // Wait a moment for server to be ready, then open
+        setTimeout(() => {
+          window.open(result.url, '_blank');
+        }, 2000);
+      } else {
+        alert(`Failed to start app: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error starting dev server:', error);
+      alert(`Error starting app: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setPlayingId(null);
+    }
+  }, []);
 
   // Handle refresh button click
   const handleRefresh = useCallback(async () => {
@@ -299,6 +326,15 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
                   <td className="session-date-cell">{formatDate(session.lastActivityAt)}</td>
                   <td className="session-actions-cell">
                     <div className="session-action-buttons">
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={(e) => handlePlay(e, session.sessionId)}
+                        disabled={playingId === session.sessionId}
+                        title="Start app and open in new tab"
+                        aria-label="Play app in new tab"
+                      >
+                        {playingId === session.sessionId ? '⏳ Starting...' : '▶️ Play'}
+                      </button>
                       <button
                         className="btn btn-sm btn-secondary"
                         onClick={(e) => handleResume(e, session)}

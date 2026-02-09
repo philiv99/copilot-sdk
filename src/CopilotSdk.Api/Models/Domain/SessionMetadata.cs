@@ -39,4 +39,19 @@ public class SessionMetadata
     /// The configuration used to create this session.
     /// </summary>
     public SessionConfig? Config { get; set; }
+
+    /// <summary>
+    /// Local repository path for the app being built.
+    /// </summary>
+    public string? AppPath { get; set; }
+
+    /// <summary>
+    /// Port where the dev server is running (if started).
+    /// </summary>
+    public int? DevServerPort { get; set; }
+
+    /// <summary>
+    /// Whether the dev server is currently running.
+    /// </summary>
+    public bool IsDevServerRunning { get; set; }
 }

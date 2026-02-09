@@ -34,9 +34,30 @@ export interface ApiError {
 }
 
 /**
- * Base URL for the API - direct communication with backend.
+ * Dev server response interface.
  */
-const API_BASE_URL = 'http://localhost:5139/api/copilot';
+export interface DevServerResponse {
+  success: boolean;
+  port: number;
+  url: string;
+  message: string;
+}
+
+/**
+ * Dev server status response interface.
+ */
+export interface DevServerStatusResponse {
+  isRunning: boolean;
+  port?: number;
+  url?: string;
+}
+
+/**
+ * Base URL for the API.
+ * Reads from REACT_APP_API_BASE_URL environment variable (set in .env).
+ * Falls back to localhost for development.
+ */
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5139/api/copilot';
 
 /**
  * Axios instance with common configuration.
@@ -343,6 +364,52 @@ export async function getSystemPromptTemplateContent(templateName: string): Prom
     const response = await apiClient.get<SystemPromptTemplateContentResponse>(
       `/system-prompt-templates/${encodeURIComponent(templateName)}`
     );
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+// #endregion
+
+// #region Dev Server Operations
+
+/**
+ * Start the development server for a session's app.
+ * @param sessionId The session ID.
+ * @param appPath Optional override for the app path.
+ */
+export async function startDevServer(sessionId: string, appPath?: string): Promise<DevServerResponse> {
+  try {
+    const queryParams = appPath ? `?appPath=${encodeURIComponent(appPath)}` : '';
+    const response = await apiClient.post<DevServerResponse>(
+      `/sessions/${sessionId}/dev-server/start${queryParams}`
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+/**
+ * Stop the development server for a session.
+ * @param sessionId The session ID.
+ */
+export async function stopDevServer(sessionId: string): Promise<void> {
+  try {
+    await apiClient.post(`/sessions/${sessionId}/dev-server/stop`);
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+/**
+ * Get the status of the development server for a session.
+ * @param sessionId The session ID.
+ */
+export async function getDevServerStatus(sessionId: string): Promise<DevServerStatusResponse> {
+  try {
+    const response = await apiClient.get<DevServerStatusResponse>(`/sessions/${sessionId}/dev-server/status`);
     return response.data;
   } catch (error) {
     throw new Error(extractErrorMessage(error));

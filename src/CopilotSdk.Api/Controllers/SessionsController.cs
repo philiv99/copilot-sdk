@@ -298,4 +298,63 @@ public class SessionsController : ControllerBase
 
         return NoContent();
     }
+
+    /// <summary>
+    /// Starts the development server for a session's app.
+    /// </summary>
+    /// <param name="sessionId">The session ID.</param>
+    /// <param name="appPath">Optional override for the app path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Dev server information.</returns>
+    [HttpPost("{sessionId}/dev-server/start")]
+    [ProducesResponseType(typeof(DevServerResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<DevServerResponse>> StartDevServer(
+        string sessionId,
+        [FromQuery] string? appPath,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogDebug("Starting dev server for session {SessionId}", sessionId);
+        var response = await _sessionService.StartDevServerAsync(sessionId, appPath, cancellationToken);
+        
+        if (!response.Success)
+        {
+            return Problem(response.Message, statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Stops the development server for a session's app.
+    /// </summary>
+    /// <param name="sessionId">The session ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("{sessionId}/dev-server/stop")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> StopDevServer(
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogDebug("Stopping dev server for session {SessionId}", sessionId);
+        await _sessionService.StopDevServerAsync(sessionId, cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Gets the status of the development server for a session.
+    /// </summary>
+    /// <param name="sessionId">The session ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpGet("{sessionId}/dev-server/status")]
+    [ProducesResponseType(typeof(DevServerStatusResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DevServerStatusResponse>> GetDevServerStatus(
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        var status = await _sessionService.GetDevServerStatusAsync(sessionId, cancellationToken);
+        return Ok(status);
+    }
 }
