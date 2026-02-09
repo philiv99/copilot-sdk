@@ -4,9 +4,21 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { StatusBar } from './StatusBar';
-import { CopilotClientProvider, SessionProvider } from '../../context';
+import { CopilotClientProvider, SessionProvider, UserProvider } from '../../context';
 import { BrowserRouter } from 'react-router-dom';
 import * as api from '../../api';
+
+// Mock the user API module
+jest.mock('../../api/userApi', () => ({
+  getStoredUserId: jest.fn().mockReturnValue(null),
+  setStoredUserId: jest.fn(),
+  getCurrentUser: jest.fn().mockRejectedValue(new Error('Not authenticated')),
+  login: jest.fn(),
+  logout: jest.fn().mockResolvedValue(undefined),
+  register: jest.fn(),
+  updateProfile: jest.fn(),
+  changePassword: jest.fn(),
+}));
 
 // Mock the API module
 jest.mock('../../api', () => ({
@@ -65,11 +77,13 @@ jest.mock('@microsoft/signalr', () => ({
 const renderWithProviders = (ui: React.ReactElement) => {
   return render(
     <BrowserRouter>
-      <CopilotClientProvider autoRefresh={false}>
-        <SessionProvider autoConnectHub={false}>
-          {ui}
-        </SessionProvider>
-      </CopilotClientProvider>
+      <UserProvider>
+        <CopilotClientProvider autoRefresh={false}>
+          <SessionProvider autoConnectHub={false}>
+            {ui}
+          </SessionProvider>
+        </CopilotClientProvider>
+      </UserProvider>
     </BrowserRouter>
   );
 };

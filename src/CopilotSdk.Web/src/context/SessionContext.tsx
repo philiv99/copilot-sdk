@@ -1,7 +1,7 @@
 /**
  * React context for managing session state.
  */
-import React, { createContext, useContext, useReducer, useCallback, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef, ReactNode } from 'react';
 import {
   SessionInfoResponse,
   CreateSessionRequest,
@@ -12,6 +12,7 @@ import {
 } from '../types';
 import * as api from '../api';
 import { useSessionHub, HubConnectionState } from '../hooks';
+import { useUser } from './UserContext';
 
 // #region State Types
 
@@ -68,7 +69,8 @@ type SessionAction =
   | { type: 'SESSION_CREATED'; payload: SessionInfoResponse }
   | { type: 'SESSION_DELETED'; payload: string }
   | { type: 'SET_SENDING'; payload: boolean }
-  | { type: 'SET_HUB_CONNECTION_STATE'; payload: HubConnectionState };
+  | { type: 'SET_HUB_CONNECTION_STATE'; payload: HubConnectionState }
+  | { type: 'RESET_SESSIONS' };
 
 /**
  * Reducer for the session context.
@@ -128,6 +130,8 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, isSending: action.payload };
     case 'SET_HUB_CONNECTION_STATE':
       return { ...state, hubConnectionState: action.payload };
+    case 'RESET_SESSIONS':
+      return { ...initialState };
     default:
       return state;
   }
@@ -230,6 +234,8 @@ interface SessionProviderProps {
  */
 export function SessionProvider({ children, autoConnectHub = true }: SessionProviderProps) {
   const [state, dispatch] = useReducer(sessionReducer, initialState);
+  const { state: userState } = useUser();
+  const prevUserIdRef = useRef<string | null | undefined>(undefined);
 
   // Handle session events from SignalR
   const handleSessionEvent = useCallback((sessionId: string, event: SessionEvent) => {
@@ -429,10 +435,33 @@ export function SessionProvider({ children, autoConnectHub = true }: SessionProv
     dispatch({ type: 'CLEAR_ERROR' });
   }, []);
 
-  // Load sessions on mount
+  // Clear and refresh sessions when the authenticated user changes (login/logout)
   useEffect(() => {
-    refreshSessions();
-  }, [refreshSessions]);
+    const currentUserId = userState.currentUser?.id ?? null;
+
+    // Skip the very first render (initial undefined)
+    if (prevUserIdRef.current === undefined) {
+      prevUserIdRef.current = currentUserId;
+      // Initial load
+      if (currentUserId) {
+        refreshSessions();
+      }
+      return;
+    }
+
+    // User changed
+    if (currentUserId !== prevUserIdRef.current) {
+      prevUserIdRef.current = currentUserId;
+
+      // Reset all session state first
+      dispatch({ type: 'RESET_SESSIONS' });
+
+      // If a new user logged in, fetch their sessions
+      if (currentUserId) {
+        refreshSessions();
+      }
+    }
+  }, [userState.currentUser?.id, refreshSessions]);
 
   const value: SessionContextValue = {
     ...state,
