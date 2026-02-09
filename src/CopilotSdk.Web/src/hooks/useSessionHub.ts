@@ -139,6 +139,15 @@ export function useSessionHub(options: UseSessionHubOptions = {}): UseSessionHub
       onStreamingDeltaRef.current?.(delta);
     });
 
+    // Handle server confirmations for join/leave session
+    connection.on('JoinedSession', (_sessionId: string) => {
+      // Acknowledgement from server, no action needed
+    });
+
+    connection.on('LeftSession', (_sessionId: string) => {
+      // Acknowledgement from server, no action needed
+    });
+
     // Handle connection state changes
     connection.onreconnecting((error) => {
       updateConnectionState('Reconnecting');

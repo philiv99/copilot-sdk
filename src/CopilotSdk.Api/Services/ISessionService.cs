@@ -1,3 +1,4 @@
+using CopilotSdk.Api.Models.Domain;
 using CopilotSdk.Api.Models.Requests;
 using CopilotSdk.Api.Models.Responses;
 
@@ -12,9 +13,10 @@ public interface ISessionService
     /// Creates a new session with the specified configuration.
     /// </summary>
     /// <param name="request">The session creation request.</param>
+    /// <param name="creatorUserId">The user ID of the session creator.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Information about the created session.</returns>
-    Task<SessionInfoResponse> CreateSessionAsync(CreateSessionRequest request, CancellationToken cancellationToken = default);
+    Task<SessionInfoResponse> CreateSessionAsync(CreateSessionRequest request, string? creatorUserId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Resumes an existing session by ID.
@@ -26,11 +28,13 @@ public interface ISessionService
     Task<SessionInfoResponse> ResumeSessionAsync(string sessionId, ResumeSessionRequest? request = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lists all available sessions.
+    /// Lists sessions visible to the specified user based on their role.
+    /// Admins see all sessions. Creators see only their own sessions. Players see sessions with dev servers (playable).
     /// </summary>
+    /// <param name="user">The current user, or null for unauthenticated access (returns all).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of session information.</returns>
-    Task<SessionListResponse> ListSessionsAsync(CancellationToken cancellationToken = default);
+    Task<SessionListResponse> ListSessionsAsync(User? user = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets information about a specific session.

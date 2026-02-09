@@ -4,6 +4,7 @@ using CopilotSdk.Api.Models.Requests;
 using CopilotSdk.Api.Models.Responses;
 using CopilotSdk.Api.Services;
 using CopilotSdk.Api.Tools;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -24,6 +25,7 @@ public class IntegrationTests
     private readonly Mock<ILogger<SessionsController>> _sessionsControllerLoggerMock;
     private readonly Mock<ICopilotClientService> _clientServiceMock;
     private readonly Mock<ISessionService> _sessionServiceMock;
+    private readonly Mock<IUserService> _userServiceMock;
     private readonly ToolExecutionService _toolExecutionService;
     private readonly CopilotClientController _clientController;
     private readonly SessionsController _sessionsController;
@@ -40,13 +42,28 @@ public class IntegrationTests
         // Create service mocks
         _clientServiceMock = new Mock<ICopilotClientService>();
         _sessionServiceMock = new Mock<ISessionService>();
+        _userServiceMock = new Mock<IUserService>();
 
         // Create real tool service
         _toolExecutionService = new ToolExecutionService(_toolServiceLoggerMock.Object);
 
         // Create controllers with mocked services
         _clientController = new CopilotClientController(_clientServiceMock.Object, _clientControllerLoggerMock.Object);
-        _sessionsController = new SessionsController(_sessionServiceMock.Object, _sessionsControllerLoggerMock.Object);
+        _sessionsController = new SessionsController(_sessionServiceMock.Object, _userServiceMock.Object, _sessionsControllerLoggerMock.Object);
+        _sessionsController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext()
+        };
+
+        // Default: set up an admin user for integration tests
+        SetAdminUser();
+    }
+
+    private void SetAdminUser()
+    {
+        _sessionsController.HttpContext.Request.Headers["X-User-Id"] = "admin-id";
+        _userServiceMock.Setup(s => s.ValidateUserAsync("admin-id", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = "admin-id", Role = UserRole.Admin, IsActive = true, Username = "admin", DisplayName = "Admin" });
     }
 
     #endregion
@@ -138,7 +155,7 @@ public class IntegrationTests
             }
         };
 
-        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionInfoResponse
             {
                 SessionId = "integration-test-session",
@@ -162,7 +179,7 @@ public class IntegrationTests
         // Verify service was called with correct params
         _sessionServiceMock.Verify(s => s.CreateSessionAsync(
             It.Is<CreateSessionRequest>(r => r.SessionId == "integration-test-session" && r.Model == "gpt-5"),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -191,7 +208,7 @@ public class IntegrationTests
             Tools = tools
         };
 
-        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionInfoResponse
             {
                 SessionId = "tools-test-session",
@@ -208,7 +225,7 @@ public class IntegrationTests
         // Verify service received tools
         _sessionServiceMock.Verify(s => s.CreateSessionAsync(
             It.Is<CreateSessionRequest>(r => r.Tools != null && r.Tools.Count == 1 && r.Tools[0].Name == "calculator"),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -227,7 +244,7 @@ public class IntegrationTests
             }
         };
 
-        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionInfoResponse
             {
                 SessionId = "byok-test-session",
@@ -244,7 +261,7 @@ public class IntegrationTests
         // Verify service received provider config
         _sessionServiceMock.Verify(s => s.CreateSessionAsync(
             It.Is<CreateSessionRequest>(r => r.Provider != null && r.Provider.Type == "openai"),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -262,7 +279,7 @@ public class IntegrationTests
             }
         };
 
-        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionInfoResponse
             {
                 SessionId = "sysmesg-test-session",
@@ -279,7 +296,7 @@ public class IntegrationTests
         // Verify service received system message config
         _sessionServiceMock.Verify(s => s.CreateSessionAsync(
             It.Is<CreateSessionRequest>(r => r.SystemMessage != null && r.SystemMessage.Mode == "Replace"),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion
@@ -290,7 +307,7 @@ public class IntegrationTests
     public async Task FullFlow_ListSessions_ReturnsAllSessions()
     {
         // Arrange
-        _sessionServiceMock.Setup(s => s.ListSessionsAsync(It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.ListSessionsAsync(It.IsAny<User?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionListResponse
             {
                 Sessions = new List<SessionInfoResponse>
@@ -701,7 +718,7 @@ public class IntegrationTests
             }
         };
 
-        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.CreateSessionAsync(It.IsAny<CreateSessionRequest>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionInfoResponse
             {
                 SessionId = "fully-configured-session",
@@ -736,7 +753,7 @@ public class IntegrationTests
                 r.Tools.Count == 1 &&
                 r.Provider != null &&
                 r.Provider.Type == "azure"),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion

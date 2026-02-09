@@ -155,14 +155,16 @@ export function TabContainer({ initialSessionId }: TabContainerProps) {
 
         {/* Session Tabs */}
         {openTabs.map((tab) => (
-          <button
+          <div
             key={tab.sessionId}
             className={`tab session-tab ${activeTab === tab.sessionId ? 'active' : ''}`}
             onClick={() => openSessionTab(tab.sessionId)}
             role="tab"
+            tabIndex={0}
             aria-selected={activeTab === tab.sessionId}
             aria-controls={`tab-panel-${tab.sessionId}`}
             data-testid={`tab-session-${tab.sessionId}`}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSessionTab(tab.sessionId); } }}
           >
             <span className="tab-icon" aria-hidden="true">💬</span>
             <span className="tab-label" title={tab.sessionId}>
@@ -176,7 +178,7 @@ export function TabContainer({ initialSessionId }: TabContainerProps) {
             >
               ×
             </button>
-          </button>
+          </div>
         ))}
       </div>
 

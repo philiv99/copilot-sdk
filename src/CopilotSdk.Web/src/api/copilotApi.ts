@@ -2,6 +2,7 @@
  * API client for communicating with the Copilot SDK backend.
  */
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import { getStoredUserId } from './userApi';
 import {
   CopilotClientConfig,
   ClientStatusResponse,
@@ -67,6 +68,15 @@ const apiClient: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// Interceptor to add X-User-Id header to all requests for role-based access control
+apiClient.interceptors.request.use((config) => {
+  const userId = getStoredUserId();
+  if (userId) {
+    config.headers['X-User-Id'] = userId;
+  }
+  return config;
 });
 
 /**

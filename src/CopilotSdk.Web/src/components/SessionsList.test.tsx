@@ -26,6 +26,20 @@ jest.mock('../context', () => ({
     refreshSessions: mockRefreshSessions,
     clearError: mockClearError,
   }),
+  useUser: () => ({
+    isCreatorOrAdmin: mockIsCreatorOrAdmin,
+    isAdmin: false,
+    isAuthenticated: true,
+    state: { currentUser: null, isLoading: false, isInitialized: true, error: null },
+    hasRole: () => mockIsCreatorOrAdmin,
+    login: jest.fn(),
+    register: jest.fn(),
+    logout: jest.fn(),
+    updateProfile: jest.fn(),
+    changePassword: jest.fn(),
+    refreshUser: jest.fn(),
+    clearError: jest.fn(),
+  }),
 }));
 
 // Mock navigate
@@ -40,6 +54,7 @@ let mockSessions: SessionInfoResponse[] = [];
 let mockActiveSessionId: string | null = null;
 let mockIsLoading = false;
 let mockError: string | null = null;
+let mockIsCreatorOrAdmin = true;
 
 const testSessions: SessionInfoResponse[] = [
   {
@@ -80,6 +95,7 @@ describe('SessionsList', () => {
     mockActiveSessionId = null;
     mockIsLoading = false;
     mockError = null;
+    mockIsCreatorOrAdmin = true;
   });
 
   describe('rendering', () => {

@@ -4,7 +4,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MainLayout } from './MainLayout';
-import { CopilotClientProvider, SessionProvider } from '../../context';
+import { CopilotClientProvider, SessionProvider, UserProvider } from '../../context';
 import { BrowserRouter } from 'react-router-dom';
 
 // Mock the API module
@@ -26,6 +26,15 @@ jest.mock('../../api', () => ({
     sessions: [],
     totalCount: 0,
   }),
+}));
+
+// Mock the userApi module used by UserContext
+jest.mock('../../api/userApi', () => ({
+  getStoredUserId: jest.fn().mockReturnValue(null),
+  setStoredUserId: jest.fn(),
+  getCurrentUser: jest.fn().mockRejectedValue(new Error('Not logged in')),
+  login: jest.fn(),
+  logout: jest.fn(),
 }));
 
 // Mock SignalR
@@ -61,11 +70,13 @@ jest.mock('@microsoft/signalr', () => ({
 const renderWithProviders = (ui: React.ReactElement) => {
   return render(
     <BrowserRouter>
-      <CopilotClientProvider autoRefresh={false}>
-        <SessionProvider autoConnectHub={false}>
-          {ui}
-        </SessionProvider>
-      </CopilotClientProvider>
+      <UserProvider>
+        <CopilotClientProvider autoRefresh={false}>
+          <SessionProvider autoConnectHub={false}>
+            {ui}
+          </SessionProvider>
+        </CopilotClientProvider>
+      </UserProvider>
     </BrowserRouter>
   );
 };

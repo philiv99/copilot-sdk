@@ -106,6 +106,10 @@ export interface SessionInfoResponse {
   messageCount: number;
   /** Summary of the session conversation. */
   summary?: string;
+  /** ID of the user who created this session. */
+  creatorUserId?: string;
+  /** Display name of the user who created this session. */
+  creatorDisplayName?: string;
 }
 
 /**

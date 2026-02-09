@@ -227,7 +227,7 @@ export function CreateSessionModal({
                     placeholder="Auto-generated if empty"
                     disabled={isLoading}
                     data-testid="session-id-input"
-                    pattern="[a-zA-Z0-9_-]*"
+                    pattern="[a-zA-Z0-9_\-]*"
                   />
                   {sessionId && !isValidSessionId(sessionId) ? (
                     <span className="form-hint form-hint-error">

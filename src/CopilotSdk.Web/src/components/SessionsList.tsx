@@ -3,7 +3,7 @@
  */
 import React, { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSession } from '../context';
+import { useSession, useUser } from '../context';
 import { SessionInfoResponse } from '../types';
 import { Spinner, CardSkeleton } from './Loading';
 import { startDevServer } from '../api/copilotApi';
@@ -86,6 +86,7 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
     resumeSession,
     clearError,
   } = useSession();
+  const { isCreatorOrAdmin } = useUser();
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
@@ -186,7 +187,7 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
             >
               🔄
             </button>
-            {showCreateButton && onCreateClick && (
+            {showCreateButton && onCreateClick && isCreatorOrAdmin && (
               <button
                 className="sessions-list-action-btn sessions-list-create-btn"
                 onClick={onCreateClick}
@@ -213,7 +214,7 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
         ) : sessions.length === 0 ? (
           <div className="sessions-list-empty">
             <p>No sessions yet</p>
-            {showCreateButton && onCreateClick && (
+            {showCreateButton && onCreateClick && isCreatorOrAdmin && (
               <button className="create-session-link" onClick={onCreateClick}>
                 Create your first session
               </button>
@@ -256,7 +257,7 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
           >
             {isLoading ? <><Spinner size="small" /> Refreshing...</> : 'Refresh'}
           </button>
-          {showCreateButton && onCreateClick && (
+          {showCreateButton && onCreateClick && isCreatorOrAdmin && (
             <button
               className="btn btn-primary"
               onClick={onCreateClick}
@@ -284,7 +285,7 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
           <div className="empty-icon">💬</div>
           <h4>No Sessions</h4>
           <p>Create your first session to start chatting with Copilot.</p>
-          {showCreateButton && onCreateClick && (
+          {showCreateButton && onCreateClick && isCreatorOrAdmin && (
             <button className="btn btn-primary" onClick={onCreateClick}>
               Create Session
             </button>
@@ -297,6 +298,7 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
               <tr>
                 <th>Status</th>
                 <th>Session ID</th>
+                <th>Creator</th>
                 <th>Model</th>
                 <th>Messages</th>
                 <th>Created</th>
@@ -320,6 +322,9 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
                   <td className="session-id-cell" title={session.sessionId}>
                     {session.sessionId}
                   </td>
+                  <td className="session-creator-cell">
+                    {session.creatorDisplayName || session.creatorUserId || '—'}
+                  </td>
                   <td className="session-model-cell">{session.model}</td>
                   <td className="session-messages-cell">{session.messageCount}</td>
                   <td className="session-date-cell">{formatDate(session.createdAt)}</td>
@@ -335,22 +340,26 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
                       >
                         {playingId === session.sessionId ? '⏳ Starting...' : '▶️ Play'}
                       </button>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        onClick={(e) => handleResume(e, session)}
-                        disabled={resumingId === session.sessionId || session.status.toLowerCase() === 'active'}
-                        title={session.status.toLowerCase() === 'active' ? 'Session is already active' : 'Resume session'}
-                      >
-                        {resumingId === session.sessionId ? '...' : 'Resume'}
-                      </button>
-                      <button
-                        className="btn btn-sm btn-danger"
-                        onClick={(e) => handleDelete(e, session.sessionId)}
-                        disabled={deletingId === session.sessionId}
-                        title="Delete session"
-                      >
-                        {deletingId === session.sessionId ? '...' : 'Delete'}
-                      </button>
+                      {isCreatorOrAdmin && (
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={(e) => handleResume(e, session)}
+                          disabled={resumingId === session.sessionId || session.status.toLowerCase() === 'active'}
+                          title={session.status.toLowerCase() === 'active' ? 'Session is already active' : 'Resume session'}
+                        >
+                          {resumingId === session.sessionId ? '...' : 'Resume'}
+                        </button>
+                      )}
+                      {isCreatorOrAdmin && (
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={(e) => handleDelete(e, session.sessionId)}
+                          disabled={deletingId === session.sessionId}
+                          title="Delete session"
+                        >
+                          {deletingId === session.sessionId ? '...' : 'Delete'}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

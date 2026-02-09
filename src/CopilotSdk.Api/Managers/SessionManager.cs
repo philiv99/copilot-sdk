@@ -44,7 +44,9 @@ public class SessionManager
     /// <param name="sessionId">The session ID.</param>
     /// <param name="session">The SDK session instance.</param>
     /// <param name="config">The configuration used to create the session.</param>
-    public async Task RegisterSessionAsync(string sessionId, CopilotSession session, Models.Domain.SessionConfig config, CancellationToken cancellationToken = default)
+    /// <param name="creatorUserId">The user ID of the creator of this session.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task RegisterSessionAsync(string sessionId, CopilotSession session, Models.Domain.SessionConfig config, string? creatorUserId = null, CancellationToken cancellationToken = default)
     {
         var metadata = new Models.Domain.SessionMetadata
         {
@@ -52,6 +54,7 @@ public class SessionManager
             CreatedAt = DateTime.UtcNow,
             LastActivityAt = DateTime.UtcNow,
             MessageCount = 0,
+            CreatorUserId = creatorUserId,
             Config = config
         };
 
@@ -431,6 +434,7 @@ public class SessionManager
             MessageCount = sessionData.MessageCount,
             Summary = sessionData.Summary,
             IsRemote = sessionData.IsRemote,
+            CreatorUserId = sessionData.CreatorUserId,
             Config = sessionData.Config != null ? ConvertToSessionConfig(sessionData.Config) : null
         };
     }
@@ -483,6 +487,7 @@ public class SessionManager
             MessageCount = metadata.MessageCount,
             Summary = metadata.Summary,
             IsRemote = metadata.IsRemote,
+            CreatorUserId = metadata.CreatorUserId,
             Config = metadata.Config != null ? ConvertToPersistedConfig(metadata.Config) : null,
             Messages = new List<PersistedMessage>()
         };

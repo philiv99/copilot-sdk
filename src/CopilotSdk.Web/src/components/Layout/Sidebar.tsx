@@ -3,7 +3,7 @@
  */
 import React, { useState, useCallback, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { useSession } from '../../context';
+import { useSession, useUser } from '../../context';
 import { SessionsList } from '../SessionsList';
 import { CreateSessionModal } from '../CreateSessionModal';
 import './Sidebar.css';
@@ -47,6 +47,7 @@ export function Sidebar({ navItems = defaultNavItems, isOpen = false, onClose }:
   const navigate = useNavigate();
   const location = useLocation();
   const { createSession, isLoading } = useSession();
+  const { isCreatorOrAdmin } = useUser();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Close sidebar on route change (mobile)
@@ -117,7 +118,7 @@ export function Sidebar({ navItems = defaultNavItems, isOpen = false, onClose }:
         <div className="sidebar-sessions">
           <SessionsList
             compact={true}
-            showCreateButton={true}
+            showCreateButton={isCreatorOrAdmin}
             onCreateClick={handleCreateClick}
           />
         </div>

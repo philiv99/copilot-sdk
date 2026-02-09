@@ -4,6 +4,7 @@ using CopilotSdk.Api.Managers;
 using CopilotSdk.Api.Middleware;
 using CopilotSdk.Api.Models.Domain;
 using CopilotSdk.Api.Services;
+using CopilotSdk.Api.Tools;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,7 +32,8 @@ builder.Services.Configure<CopilotClientConfig>(
     builder.Configuration.GetSection("CopilotClient"));
 
 // Register persistence service (must be registered before managers that depend on it)
-builder.Services.AddSingleton<IPersistenceService, PersistenceService>();
+// Uses SQLite for atomic writes, queryable data, and proper concurrency handling
+builder.Services.AddSingleton<IPersistenceService, SqlitePersistenceService>();
 
 // Register Copilot services
 builder.Services.AddSingleton<CopilotClientManager>(sp =>
@@ -78,6 +80,7 @@ builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IPromptRefinementService, PromptRefinementService>();
 builder.Services.AddScoped<IModelsService, ModelsService>();
 builder.Services.AddScoped<ISystemPromptTemplateService, SystemPromptTemplateService>();
+builder.Services.AddScoped<IUserService, UserService>();
 
 // Register hosted service for automatic client startup/shutdown
 builder.Services.AddHostedService<CopilotClientHostedService>();
@@ -91,6 +94,15 @@ sessionManager.SetEventDispatcher(eventDispatcher);
 
 // Load persisted data on startup
 await LoadPersistedDataAsync(app.Services);
+
+// Migrate any existing JSON data to SQLite (idempotent — skips already-migrated records)
+await MigrateJsonToSqliteAsync(app.Services);
+
+// Seed default admin user if no users exist
+await SeedDefaultAdminAsync(app.Services);
+
+// Seed default creator "Fred" and assign orphaned sessions
+await SeedDefaultCreatorAsync(app.Services);
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -140,6 +152,77 @@ static async Task LoadPersistedDataAsync(IServiceProvider services)
         logger.LogWarning(ex, "Failed to load persisted client configuration, using defaults");
     }
 
-    // Sessions are no longer cached in memory - they are read from persistence on demand
-    logger.LogInformation("Session persistence is file-based only (no in-memory caching)");
+    // Sessions are no longer cached in memory - they are read from SQLite on demand
+    logger.LogInformation("Session persistence is SQLite-backed (no in-memory caching)");
+}
+
+/// <summary>
+/// Runs the JSON → SQLite migration on startup.
+/// This is idempotent: sessions/config already present in SQLite are skipped.
+/// </summary>
+static async Task MigrateJsonToSqliteAsync(IServiceProvider services)
+{
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    var persistenceService = services.GetRequiredService<IPersistenceService>();
+
+    try
+    {
+        var result = await JsonToSqliteMigrator.MigrateAsync(
+            persistenceService,
+            persistenceService.DataDirectory,
+            logger);
+
+        if (result.SessionsMigrated > 0 || result.ClientConfigMigrated)
+        {
+            logger.LogInformation(
+                "JSON → SQLite migration: {Sessions} sessions ({Messages} messages) migrated, ClientConfig={Config}",
+                result.SessionsMigrated, result.TotalMessagesMigrated, result.ClientConfigMigrated);
+        }
+
+        if (result.Errors.Count > 0)
+        {
+            logger.LogWarning("Migration had {ErrorCount} errors: {Errors}",
+                result.Errors.Count, string.Join("; ", result.Errors));
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "JSON → SQLite migration failed (non-fatal, SQLite data is still usable)");
+    }
+}
+
+/// <summary>
+/// Seeds the default admin account if no users exist in the database.
+/// </summary>
+static async Task SeedDefaultAdminAsync(IServiceProvider services)
+{
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        using var scope = services.CreateScope();
+        var userService = scope.ServiceProvider.GetRequiredService<IUserService>();
+        await userService.EnsureDefaultAdminAsync();
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to seed default admin account");
+    }
+}
+
+/// <summary>
+/// Seeds the default creator account "Fred" and assigns orphaned sessions to Fred.
+/// </summary>
+static async Task SeedDefaultCreatorAsync(IServiceProvider services)
+{
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        using var scope = services.CreateScope();
+        var userService = scope.ServiceProvider.GetRequiredService<IUserService>();
+        await userService.EnsureDefaultCreatorAsync();
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to seed default creator account");
+    }
 }

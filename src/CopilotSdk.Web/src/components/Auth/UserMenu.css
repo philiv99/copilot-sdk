@@ -1,0 +1,98 @@
+.user-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.user-menu__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+  font-size: 0.9rem;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.user-menu__trigger:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.user-menu__name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu__caret {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.user-menu__dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 6px;
+  min-width: 200px;
+  background: #1e1e2e;
+  border: 1px solid #383850;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.user-menu__header {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.user-menu__header strong {
+  font-size: 0.9rem;
+}
+
+.user-menu__role {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  text-transform: capitalize;
+}
+
+.user-menu__divider {
+  height: 1px;
+  background: #383850;
+}
+
+.user-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.user-menu__item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.user-menu__item--danger {
+  color: #f87171;
+}
+
+.user-menu__item--danger:hover {
+  background-color: rgba(248, 113, 113, 0.1);
+}

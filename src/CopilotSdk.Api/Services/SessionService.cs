@@ -17,6 +17,7 @@ public class SessionService : ISessionService
     private readonly SessionManager _sessionManager;
     private readonly IToolExecutionService _toolExecutionService;
     private readonly IDevServerService _devServerService;
+    private readonly IPersistenceService _persistenceService;
     private readonly ILogger<SessionService> _logger;
 
     public SessionService(
@@ -24,19 +25,21 @@ public class SessionService : ISessionService
         SessionManager sessionManager,
         IToolExecutionService toolExecutionService,
         IDevServerService devServerService,
+        IPersistenceService persistenceService,
         ILogger<SessionService> logger)
     {
         _clientManager = clientManager;
         _sessionManager = sessionManager;
         _toolExecutionService = toolExecutionService;
         _devServerService = devServerService;
+        _persistenceService = persistenceService;
         _logger = logger;
     }
 
     /// <inheritdoc/>
-    public async Task<SessionInfoResponse> CreateSessionAsync(CreateSessionRequest request, CancellationToken cancellationToken = default)
+    public async Task<SessionInfoResponse> CreateSessionAsync(CreateSessionRequest request, string? creatorUserId = null, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Creating session with model {Model}", request.Model);
+        _logger.LogInformation("Creating session with model {Model} for user {UserId}", request.Model, creatorUserId ?? "anonymous");
 
         var config = new DomainSessionConfig
         {
@@ -61,7 +64,7 @@ public class SessionService : ISessionService
         var session = await _clientManager.CreateSessionAsync(config, tools, cancellationToken);
 
         // Register the session in the SessionManager (persists to disk)
-        await _sessionManager.RegisterSessionAsync(session.SessionId, session, config, cancellationToken);
+        await _sessionManager.RegisterSessionAsync(session.SessionId, session, config, creatorUserId, cancellationToken);
 
         var metadata = await _sessionManager.GetMetadataAsync(session.SessionId, cancellationToken);
 
@@ -74,7 +77,8 @@ public class SessionService : ISessionService
             LastActivityAt = metadata?.LastActivityAt,
             Status = "Active",
             MessageCount = 0,
-            Summary = metadata?.Summary
+            Summary = metadata?.Summary,
+            CreatorUserId = creatorUserId
         };
     }
 
@@ -112,20 +116,61 @@ public class SessionService : ISessionService
             LastActivityAt = metadata?.LastActivityAt ?? DateTime.UtcNow,
             Status = "Active",
             MessageCount = metadata?.MessageCount ?? 0,
-            Summary = metadata?.Summary
+            Summary = metadata?.Summary,
+            CreatorUserId = metadata?.CreatorUserId,
+            CreatorDisplayName = await GetCreatorDisplayNameAsync(metadata?.CreatorUserId, cancellationToken)
         };
     }
 
     /// <inheritdoc/>
-    public async Task<SessionListResponse> ListSessionsAsync(CancellationToken cancellationToken = default)
+    public async Task<SessionListResponse> ListSessionsAsync(User? user = null, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Listing all sessions");
+        _logger.LogInformation("Listing sessions for user {UserId} (role: {Role})", user?.Id ?? "anonymous", user?.Role.ToString() ?? "none");
 
         // Get all metadata from persistence (file system is the source of truth)
-        // We do NOT sync from SDK - if user deleted session files, they stay deleted
         var allMetadata = await _sessionManager.GetAllMetadataAsync(cancellationToken);
 
-        var sessions = allMetadata.Select(meta => new SessionInfoResponse
+        // Apply role-based filtering
+        IEnumerable<Models.Domain.SessionMetadata> filteredMetadata;
+        if (user == null)
+        {
+            // No user context (unauthenticated) - return all for backwards compatibility
+            filteredMetadata = allMetadata;
+        }
+        else if (user.Role == UserRole.Admin)
+        {
+            // Admins see all sessions
+            filteredMetadata = allMetadata;
+        }
+        else if (user.Role == UserRole.Creator)
+        {
+            // Creators see only sessions they created
+            filteredMetadata = allMetadata.Where(m => m.CreatorUserId == user.Id);
+        }
+        else
+        {
+            // Players see only sessions that have a dev server running (playable games)
+            filteredMetadata = allMetadata.Where(m => m.IsDevServerRunning || m.DevServerPort.HasValue);
+        }
+
+        // Look up creator display names
+        var creatorUserIds = filteredMetadata
+            .Select(m => m.CreatorUserId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Distinct()
+            .ToList();
+
+        var creatorNames = new Dictionary<string, string>();
+        foreach (var creatorId in creatorUserIds)
+        {
+            var creator = await _persistenceService.GetUserByIdAsync(creatorId!, cancellationToken);
+            if (creator != null)
+            {
+                creatorNames[creatorId!] = creator.DisplayName;
+            }
+        }
+
+        var sessions = filteredMetadata.Select(meta => new SessionInfoResponse
         {
             SessionId = meta.SessionId,
             Model = meta.Config?.Model ?? "unknown",
@@ -134,7 +179,9 @@ public class SessionService : ISessionService
             LastActivityAt = meta.LastActivityAt,
             Status = _sessionManager.IsSessionActive(meta.SessionId) ? "Active" : "Inactive",
             MessageCount = meta.MessageCount,
-            Summary = meta.Summary
+            Summary = meta.Summary,
+            CreatorUserId = meta.CreatorUserId,
+            CreatorDisplayName = meta.CreatorUserId != null && creatorNames.TryGetValue(meta.CreatorUserId, out var name) ? name : null
         }).ToList();
 
         return new SessionListResponse
@@ -186,8 +233,20 @@ public class SessionService : ISessionService
             LastActivityAt = metadata.LastActivityAt,
             Status = _sessionManager.IsSessionActive(sessionId) ? "Active" : "Inactive",
             MessageCount = metadata.MessageCount,
-            Summary = metadata.Summary
+            Summary = metadata.Summary,
+            CreatorUserId = metadata.CreatorUserId,
+            CreatorDisplayName = await GetCreatorDisplayNameAsync(metadata.CreatorUserId, cancellationToken)
         };
+    }
+
+    /// <summary>
+    /// Looks up the display name for a creator user ID.
+    /// </summary>
+    private async Task<string?> GetCreatorDisplayNameAsync(string? creatorUserId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(creatorUserId)) return null;
+        var creator = await _persistenceService.GetUserByIdAsync(creatorUserId, cancellationToken);
+        return creator?.DisplayName;
     }
 
     /// <inheritdoc/>

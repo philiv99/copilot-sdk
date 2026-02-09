@@ -1,3 +1,4 @@
+using CopilotSdk.Api.Models.Domain;
 using CopilotSdk.Api.Models.Requests;
 using CopilotSdk.Api.Models.Responses;
 using CopilotSdk.Api.Services;
@@ -13,16 +14,21 @@ namespace CopilotSdk.Api.Controllers;
 public class SessionsController : ControllerBase
 {
     private readonly ISessionService _sessionService;
+    private readonly IUserService _userService;
     private readonly ILogger<SessionsController> _logger;
 
-    public SessionsController(ISessionService sessionService, ILogger<SessionsController> logger)
+    private const string UserIdHeader = "X-User-Id";
+
+    public SessionsController(ISessionService sessionService, IUserService userService, ILogger<SessionsController> logger)
     {
         _sessionService = sessionService;
+        _userService = userService;
         _logger = logger;
     }
 
     /// <summary>
-    /// Lists all available sessions.
+    /// Lists sessions visible to the authenticated user based on their role.
+    /// Admins see all sessions. Creators see only their own. Players see playable games.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of session information.</returns>
@@ -31,13 +37,15 @@ public class SessionsController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<SessionListResponse>> ListSessions(CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Listing all sessions");
-        var response = await _sessionService.ListSessionsAsync(cancellationToken);
+        _logger.LogDebug("Listing sessions");
+        var user = await GetCurrentUserAsync(cancellationToken);
+        var response = await _sessionService.ListSessionsAsync(user, cancellationToken);
         return Ok(response);
     }
 
     /// <summary>
     /// Creates a new session with the specified configuration.
+    /// Requires Creator or Admin role.
     /// </summary>
     /// <param name="request">The session creation request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -45,12 +53,18 @@ public class SessionsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(SessionInfoResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<SessionInfoResponse>> CreateSession(
         [FromBody] CreateSessionRequest request,
         CancellationToken cancellationToken)
     {
         _logger.LogDebug("Creating session with model {Model}", request.Model);
+
+        // Require Creator or Admin role
+        var authResult = await RequireRole(UserRole.Creator, cancellationToken);
+        if (authResult != null) return authResult;
 
         if (string.IsNullOrWhiteSpace(request.Model))
         {
@@ -62,7 +76,8 @@ public class SessionsController : ControllerBase
             });
         }
 
-        var response = await _sessionService.CreateSessionAsync(request, cancellationToken);
+        var userId = GetCurrentUserId();
+        var response = await _sessionService.CreateSessionAsync(request, userId, cancellationToken);
         return CreatedAtAction(nameof(GetSession), new { sessionId = response.SessionId }, response);
     }
 
@@ -99,6 +114,7 @@ public class SessionsController : ControllerBase
 
     /// <summary>
     /// Deletes a session by ID.
+    /// Requires Creator or Admin role. Creators can only delete their own sessions.
     /// </summary>
     /// <param name="sessionId">The session ID to delete.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -106,12 +122,22 @@ public class SessionsController : ControllerBase
     [HttpDelete("{sessionId}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> DeleteSession(
         string sessionId,
         CancellationToken cancellationToken)
     {
         _logger.LogDebug("Deleting session {SessionId}", sessionId);
+
+        // Require Creator or Admin role
+        var authResult = await RequireRole(UserRole.Creator, cancellationToken);
+        if (authResult != null) return authResult;
+
+        // Check ownership for non-admins
+        var ownershipResult = await RequireSessionOwnership(sessionId, cancellationToken);
+        if (ownershipResult != null) return ownershipResult;
 
         var deleted = await _sessionService.DeleteSessionAsync(sessionId, cancellationToken);
 
@@ -130,6 +156,7 @@ public class SessionsController : ControllerBase
 
     /// <summary>
     /// Resumes an existing session by ID.
+    /// Requires Creator or Admin role. Creators can only resume their own sessions.
     /// </summary>
     /// <param name="sessionId">The session ID to resume.</param>
     /// <param name="request">Optional resume configuration.</param>
@@ -138,6 +165,8 @@ public class SessionsController : ControllerBase
     [HttpPost("{sessionId}/resume")]
     [ProducesResponseType(typeof(SessionInfoResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<SessionInfoResponse>> ResumeSession(
         string sessionId,
@@ -145,6 +174,14 @@ public class SessionsController : ControllerBase
         CancellationToken cancellationToken)
     {
         _logger.LogDebug("Resuming session {SessionId}", sessionId);
+
+        // Require Creator or Admin role
+        var authResult = await RequireRole(UserRole.Creator, cancellationToken);
+        if (authResult != null) return authResult;
+
+        // Check ownership for non-admins
+        var ownershipResult = await RequireSessionOwnership(sessionId, cancellationToken);
+        if (ownershipResult != null) return ownershipResult;
 
         try
         {
@@ -164,6 +201,7 @@ public class SessionsController : ControllerBase
 
     /// <summary>
     /// Sends a message to a session.
+    /// Requires Creator or Admin role. Creators can only send to their own sessions.
     /// </summary>
     /// <param name="sessionId">The session ID.</param>
     /// <param name="request">The message to send.</param>
@@ -173,6 +211,8 @@ public class SessionsController : ControllerBase
     [ProducesResponseType(typeof(SendMessageResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<SendMessageResponse>> SendMessage(
         string sessionId,
@@ -180,6 +220,14 @@ public class SessionsController : ControllerBase
         CancellationToken cancellationToken)
     {
         _logger.LogDebug("Sending message to session {SessionId}", sessionId);
+
+        // Require Creator or Admin role
+        var authResult = await RequireRole(UserRole.Creator, cancellationToken);
+        if (authResult != null) return authResult;
+
+        // Check ownership for non-admins
+        var ownershipResult = await RequireSessionOwnership(sessionId, cancellationToken);
+        if (ownershipResult != null) return ownershipResult;
 
         if (string.IsNullOrWhiteSpace(request.Prompt))
         {
@@ -357,4 +405,66 @@ public class SessionsController : ControllerBase
         var status = await _sessionService.GetDevServerStatusAsync(sessionId, cancellationToken);
         return Ok(status);
     }
+
+    #region Private Helpers
+
+    private string? GetCurrentUserId()
+    {
+        if (Request.Headers.TryGetValue(UserIdHeader, out var values))
+        {
+            var userId = values.FirstOrDefault();
+            return string.IsNullOrWhiteSpace(userId) ? null : userId;
+        }
+        return null;
+    }
+
+    private async Task<User?> GetCurrentUserAsync(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null) return null;
+        return await _userService.ValidateUserAsync(userId, cancellationToken);
+    }
+
+    private async Task<ActionResult?> RequireRole(UserRole requiredRole, CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null)
+            return Unauthorized(new { error = "Authentication required." });
+
+        var user = await _userService.ValidateUserAsync(userId, cancellationToken);
+        if (user == null)
+            return Unauthorized(new { error = "User not found or inactive." });
+
+        if (user.Role < requiredRole)
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = "Insufficient permissions. Creator or Admin role required." });
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks that the current user owns the session (or is an admin).
+    /// </summary>
+    private async Task<ActionResult?> RequireSessionOwnership(string sessionId, CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null) return Unauthorized(new { error = "Authentication required." });
+
+        var user = await _userService.ValidateUserAsync(userId, cancellationToken);
+        if (user == null) return Unauthorized(new { error = "User not found or inactive." });
+
+        // Admins can access any session
+        if (user.Role == UserRole.Admin) return null;
+
+        // Check if this user owns the session
+        var session = await _sessionService.GetSessionAsync(sessionId, cancellationToken);
+        if (session == null)
+            return NotFound(new ProblemDetails { Title = "Session Not Found", Detail = $"Session with ID '{sessionId}' was not found", Status = StatusCodes.Status404NotFound });
+
+        if (session.CreatorUserId != userId)
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = "You do not have access to this session." });
+
+        return null;
+    }
+
+    #endregion
 }

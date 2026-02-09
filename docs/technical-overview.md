@@ -11,7 +11,7 @@ The codebase is structured as a .NET 9 solution with two projects and a shared t
 | Backend API | ASP.NET Core 9, SignalR, Microsoft.Extensions.AI | `src/CopilotSdk.Api/` |
 | Frontend SPA | React 19, TypeScript, SignalR client, Axios | `src/CopilotSdk.Web/` |
 | Backend Tests | xUnit 2.9, Moq 4.20 | `tests/CopilotSdk.Api.Tests/` |
-| Data Persistence | JSON files on disk | `src/data/` |
+| Data Persistence | SQLite (Microsoft.Data.Sqlite) | `src/data/copilot-sdk.db` |
 
 The backend runs on `http://localhost:5139`; the React dev server on `http://localhost:3000`.
 
@@ -69,7 +69,7 @@ The backend runs on `http://localhost:5139`; the React dev server on `http://loc
 │  └──────────────────────────┘    │
 │                                  │
 │  ┌──────────────────────────┐    │
-│  │ PersistenceService        │────┼──► src/data/*.json
+│  │ PersistenceService        │────┼──► src/data/copilot-sdk.db
 │  └──────────────────────────┘    │
 └──────────────────────────────────┘
 ```
@@ -79,7 +79,7 @@ The backend runs on `http://localhost:5139`; the React dev server on `http://loc
 1. **REST calls** — The React app issues HTTP requests via `copilotApi.ts` (Axios) to controller endpoints prefixed `/api/copilot/`.
 2. **Controller → Service → Manager** — Controllers delegate to scoped services, which coordinate singletons (`CopilotClientManager`, `SessionManager`) and the underlying SDK.
 3. **Real-time events** — The SDK fires session events (messages, deltas, tool executions) which are captured by `SessionEventDispatcher`, mapped to DTOs, and pushed via SignalR to any browser clients that have joined the relevant session group.
-4. **Persistence** — Session metadata and message history are written to JSON files under `src/data/sessions/`. Client configuration is persisted to `src/data/client-config.json`.
+4. **Persistence** — Session metadata, message history, and client configuration are stored in a SQLite database at `src/data/copilot-sdk.db`. SQLite provides atomic writes via transactions, queryable data, and safe concurrent access via WAL mode.
 
 ---
 
@@ -101,7 +101,7 @@ CopilotSdk.Api/
 │   ├── ToolExecutionService       Custom tool registration/execution
 │   ├── PromptRefinementService    Ephemeral-session-based prompt refinement
 │   ├── ModelsService              Cached model list retrieval
-│   ├── PersistenceService         JSON file I/O for sessions & config
+│   ├── SqlitePersistenceService    SQLite persistence for sessions & config
 │   ├── DevServerService           Vite dev server process management
 │   ├── SystemPromptTemplateService Template file discovery
 │   └── CopilotClientHostedService IHostedService for auto-start/stop
@@ -122,6 +122,7 @@ CopilotSdk.Api/
 │   └── Responses/                 API response DTOs
 └── Tools/
     ├── DemoTools.cs               echo_tool, get_current_time definitions
+    ├── JsonToSqliteMigrator.cs    Migrates JSON files → SQLite on startup
     └── ToolResults.cs             Result record types
 ```
 
@@ -136,7 +137,7 @@ Registrations happen in `Program.cs`:
 | `SessionManager` | Singleton | Tracks active `CopilotSession` objects + persistence |
 | `SessionEventDispatcher` | Singleton | Receives SDK events, forwards via SignalR |
 | `IToolExecutionService` | Singleton | Tool registry with `ConcurrentDictionary` |
-| `IPersistenceService` | Singleton | File-based JSON persistence |
+| `IPersistenceService` | Singleton | SQLite-backed persistence (`SqlitePersistenceService`) |
 | `IDevServerService` | Singleton | Manages Vite child processes |
 | `ICopilotClientService` | Scoped | Per-request thin wrapper over `CopilotClientManager` |
 | `ISessionService` | Scoped | Per-request orchestration for session ops |
@@ -156,18 +157,18 @@ The heart of the backend — manages the single `CopilotClient` SDK instance.
 - Thread-safe via `lock(_lock)` around client access.
 - Persists config changes through `IPersistenceService`.
 
-Configuration is initially loaded from `appsettings.json` (`CopilotClient` section) and overridden by `src/data/client-config.json` if it exists.
+Configuration is initially loaded from `appsettings.json` (`CopilotClient` section) and overridden by the persisted SQLite configuration if it exists.
 
 ### 3.4 SessionManager (Singleton)
 
 Tracks active SDK `CopilotSession` objects in a `ConcurrentDictionary` and manages their metadata on disk.
 
 **Key responsibilities:**
-- `RegisterSessionAsync` — stores the live session object + persists metadata JSON.
+- `RegisterSessionAsync` — stores the live session object + persists metadata to SQLite.
 - `SetupEventHandler` — subscribes the session to `SessionEventDispatcher` via `session.On(handler)`.
-- `GetMetadataAsync` / `GetAllMetadataAsync` — reads from persistence (no in-memory cache).
-- `IncrementMessageCountAsync`, `UpdateSummaryAsync` — read-modify-write patterns against persisted JSON.
-- `RemoveSessionAsync` — disposes event subscription, removes from active dictionary and disk.
+- `GetMetadataAsync` / `GetAllMetadataAsync` — reads from SQLite persistence (no in-memory cache).
+- `IncrementMessageCountAsync`, `UpdateSummaryAsync` — atomic updates against SQLite database.
+- `RemoveSessionAsync` — disposes event subscription, removes from active dictionary and database (cascade deletes messages).
 
 ### 3.5 SessionService (Scoped)
 
@@ -175,8 +176,8 @@ The primary orchestration layer for session operations. Called by `SessionsContr
 
 - **CreateSession** — builds `SessionConfig`, optionally builds `AIFunction` collection via `ToolExecutionService`, delegates to `CopilotClientManager.CreateSessionAsync`, registers in `SessionManager`.
 - **SendMessage** — retrieves the active `CopilotSession` from `SessionManager`, converts attachments to SDK format, calls `session.SendAsync()`.
-- **ListSessions** — reads all metadata from persistence, annotates with active/inactive status.
-- **GetPersistedHistoryAsync** — loads full message history from disk for a given session.
+- **ListSessions** — reads all metadata from SQLite, annotates with active/inactive status.
+- **GetPersistedHistoryAsync** — loads full message history from SQLite for a given session.
 
 ### 3.6 SessionEventDispatcher
 
@@ -209,14 +210,16 @@ Uses an ephemeral `CopilotSession` to refine system message content via LLM:
 
 Rate-limited to 10 requests per 60 seconds per IP via `RateLimitingMiddleware`.
 
-### 3.9 PersistenceService
+### 3.9 SqlitePersistenceService
 
-File-based persistence using JSON serialization:
-- **Data directory**: `src/data/` (configurable via `Persistence:DataDirectory` in `appsettings.json`).
-- **Client config**: `src/data/client-config.json`.
-- **Sessions**: `src/data/sessions/{session-id}.json` — each file contains full `PersistedSessionData` (config, metadata, messages).
-- Uses `SemaphoreSlim` for write serialization.
-- File names are sanitized to remove invalid characters.
+SQLite-backed persistence using `Microsoft.Data.Sqlite`:
+- **Database**: `src/data/copilot-sdk.db` (data directory configurable via `Persistence:DataDirectory` in `appsettings.json`).
+- **Tables**: `ClientConfig` (single-row), `Sessions` (session metadata + config JSON), `Messages` (individual messages with foreign key to Sessions).
+- **WAL mode** enabled for concurrent read/write performance.
+- **Atomic writes** via SQLite transactions — no manual locks needed.
+- **Cascade deletes** — deleting a session automatically removes its messages.
+- **Queryable** — sessions ordered by creation date; messages ordered by sort index.
+- The `SessionConfig` and complex nested objects (attachments, tool requests) are stored as JSON columns, keeping the schema simple while allowing structured storage for flat fields.
 
 ### 3.10 Middleware
 
@@ -399,7 +402,7 @@ Browser                    API                     SDK
   │                         │◄── CopilotSession ────┤
   │                         │                       │
   │                         ├─ registerSession      │
-  │                         │   (persist to disk)   │
+  │                         │   (persist to SQLite)  │
   │                         │                       │
   │◄── 201 {sessionId} ────┤                       │
   │                         │                       │
@@ -461,7 +464,9 @@ SDK calls registered tool
 | `ToolIntegrationTests` | End-to-end tool lifecycle |
 | `ModelsControllerTests` | Models endpoint |
 | `ModelsServiceTests` | Model caching and retrieval |
-| `PersistenceServiceTests` | JSON file I/O |
+| `PersistenceServiceTests` | Legacy JSON file I/O |
+| `SqlitePersistenceServiceTests` | SQLite persistence (29 tests) |
+| `JsonToSqliteMigratorTests` | JSON → SQLite migration (10 tests) |
 | `PromptRefinementControllerTests` | Refinement endpoint validation |
 | `PromptRefinementServiceTests` | Refinement service logic |
 | `CopilotClientHostedServiceTests` | Auto-start/stop lifecycle |
@@ -483,7 +488,7 @@ SDK calls registered tool
 | Setting | Source | Default |
 |---------|--------|---------|
 | `CopilotClient:AutoStart` | `appsettings.Development.json` | `true` |
-| `Persistence:DataDirectory` | `appsettings.json` | `"data"` (relative to src/) |
+| `Persistence:DataDirectory` | `appsettings.json` | `"data"` (relative to src/; SQLite DB created inside) |
 | Listen URL | `launchSettings.json` | `http://localhost:5139` |
 | CORS | `Program.cs` | Allows `http://localhost:3000` |
 
@@ -511,7 +516,7 @@ SDK calls registered tool
 
 **Problem**: All API endpoints are unauthenticated. Any client on the network can control the Copilot client, create sessions, and send messages.
 
-**Impact**: Unsuitable for shared or production environments. BYOK API keys sent to the backend are unprotected in transit (no HTTPS in dev) and at rest (written in plain text to JSON files).
+**Impact**: Unsuitable for shared or production environments. BYOK API keys sent to the backend are unprotected in transit (no HTTPS in dev) and at rest (stored as plain text in SQLite).
 
 **Recommendation**:
 1. Add a simple authentication mechanism — at minimum, a shared secret / bearer token.
@@ -520,13 +525,11 @@ SDK calls registered tool
 
 ---
 
-### A.3 PersistenceService Write Contention
+### ~~A.3 PersistenceService Write Contention~~ ✅ RESOLVED 2026-02-09
 
-**Problem**: `PersistenceService` uses a single `SemaphoreSlim(1, 1)` for all write operations across all sessions and client config. This means a write to session A blocks a concurrent write to session B.
+**Previous state**: `PersistenceService` used a single `SemaphoreSlim(1, 1)` for all write operations across all sessions and client config.
 
-**Impact**: Under concurrent messaging to multiple sessions, writes serialize and become a bottleneck.
-
-**Recommendation**: Use per-session write locks. Replace the single `_writeLock` with a `ConcurrentDictionary<string, SemaphoreSlim>` keyed by session ID (plus a separate one for client config). This eliminates cross-session contention while maintaining per-session consistency. Estimated effort: ~1 hour.
+**Resolution**: Replaced with `SqlitePersistenceService` which uses SQLite WAL mode for concurrent read/write access. No manual locking is needed — SQLite handles concurrency internally. Cross-session writes no longer block each other.
 
 ---
 
@@ -540,15 +543,11 @@ SDK calls registered tool
 
 ---
 
-### A.5 SessionManager Read-Modify-Write Without Optimistic Concurrency
+### ~~A.5 SessionManager Read-Modify-Write Without Optimistic Concurrency~~ ✅ RESOLVED 2026-02-09
 
-**Problem**: Methods like `IncrementMessageCountAsync` and `UpdateSummaryAsync` perform read-modify-write against JSON files without any concurrency control beyond the global write lock. Two concurrent `IncrementMessageCountAsync` calls could both read count=5 and write count=6.
+**Previous state**: Methods like `IncrementMessageCountAsync` and `UpdateSummaryAsync` performed read-modify-write against JSON files without any concurrency control beyond the global write lock.
 
-**Impact**: Message counts and metadata can be inconsistent under concurrent writes.
-
-**Recommendation**: Implement either:
-- An `ETag`-style optimistic concurrency check (store a version number in the JSON, reject writes with stale versions), or
-- Per-session `SemaphoreSlim` locks (ties into A.3 above).
+**Resolution**: With SQLite persistence, write operations use database transactions which provide proper atomicity. The `AppendMessagesAsync` method uses a transaction to atomically insert messages and update the session's `MessageCount` in a single operation ({`UPDATE ... SET MessageCount = (SELECT COUNT(*) ...)`}), eliminating the read-modify-write race condition.
 
 ---
 
@@ -608,21 +607,20 @@ SDK calls registered tool
 
 ## Appendix B: Architectural Improvement Suggestions
 
-### B.1 Replace JSON File Persistence with SQLite
+### B.1 ~~Replace JSON File Persistence with SQLite~~ ✅ RESOLVED 2026-02-09
 
-**Current state**: All persistence is JSON files written to disk under `src/data/`.
+**Previous state**: All persistence was JSON files written to disk under `src/data/` with `SemaphoreSlim` for write serialization.
 
-**Problem**: File I/O with `SemaphoreSlim` is fragile under concurrency, doesn't support queries, and doesn't handle partial writes atomically.
+**Resolution**: Replaced `PersistenceService` (JSON file I/O) with `SqlitePersistenceService` using `Microsoft.Data.Sqlite`. The `IPersistenceService` interface was preserved unchanged, making this a drop-in replacement. Benefits realized:
+- **Atomic writes** via SQLite transactions — no partial writes possible.
+- **Concurrent access** via WAL (Write-Ahead Logging) mode — eliminated the single `SemaphoreSlim` bottleneck.
+- **Queryable data** — sessions ordered by creation date, messages ordered by sort index.
+- **Cascade deletes** — deleting a session automatically removes its messages via foreign key.
+- **Schema**: `ClientConfig` (single-row), `Sessions` (metadata + config JSON column), `Messages` (individual message rows with foreign key to Sessions).
 
-**Recommendation**: Replace `PersistenceService` with a SQLite-backed implementation using Entity Framework Core (or Dapper). Benefits:
-- Atomic writes via transactions.
-- Queryable session metadata (filter, sort, paginate).
-- Concurrent read/write without manual locking.
-- Migration support for schema evolution.
+The legacy `PersistenceService.cs` (JSON) is retained for reference but is no longer registered in DI. Database file: `src/data/copilot-sdk.db`.
 
-Tables: `ClientConfig`, `Sessions`, `Messages`, `ToolDefinitions`.
-
-Estimated effort: 1-2 days. The `IPersistenceService` interface already provides a clean abstraction for swapping implementations.
+**Data Migration**: A `JsonToSqliteMigrator` utility (`Tools/JsonToSqliteMigrator.cs`) runs automatically on application startup and migrates any existing JSON data (`client-config.json` and `sessions/*.json`) into SQLite. The migration is **idempotent** — records already present in SQLite are skipped, so it is safe to run repeatedly. After migration, the JSON files can be archived or removed. The migrator logs progress and any errors via the standard `ILogger` infrastructure.
 
 ---
 
@@ -658,7 +656,7 @@ if (app.Environment.IsDevelopment())
 
 **Recommendation**: Add ASP.NET Core health checks (`/health`) that verify:
 - Copilot client connection state.
-- Persistence directory is writable.
+- SQLite database is accessible and writable.
 - SignalR hub is operational.
 
 This enables integration with monitoring systems and container orchestrators.

@@ -2,6 +2,7 @@
  * Header component for the application.
  */
 import React from 'react';
+import { UserMenu } from '../Auth/UserMenu';
 import './Header.css';
 
 /**
@@ -15,7 +16,7 @@ export interface HeaderProps {
 }
 
 /**
- * Header component displaying the app title and settings button.
+ * Header component displaying the app title, settings button, and user menu.
  */
 export function Header({ title = 'App Maker', onSettingsClick }: HeaderProps) {
   return (
@@ -37,6 +38,7 @@ export function Header({ title = 'App Maker', onSettingsClick }: HeaderProps) {
             <span className="settings-icon" aria-hidden="true">⚙️</span>
           </button>
         )}
+        <UserMenu />
       </div>
     </header>
   );

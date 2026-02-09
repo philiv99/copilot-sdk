@@ -1,7 +1,9 @@
 using CopilotSdk.Api.Controllers;
+using CopilotSdk.Api.Models.Domain;
 using CopilotSdk.Api.Models.Requests;
 using CopilotSdk.Api.Models.Responses;
 using CopilotSdk.Api.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -14,14 +16,46 @@ namespace CopilotSdk.Api.Tests;
 public class SessionsControllerTests
 {
     private readonly Mock<ISessionService> _sessionServiceMock;
+    private readonly Mock<IUserService> _userServiceMock;
     private readonly Mock<ILogger<SessionsController>> _loggerMock;
     private readonly SessionsController _controller;
 
     public SessionsControllerTests()
     {
         _sessionServiceMock = new Mock<ISessionService>();
+        _userServiceMock = new Mock<IUserService>();
         _loggerMock = new Mock<ILogger<SessionsController>>();
-        _controller = new SessionsController(_sessionServiceMock.Object, _loggerMock.Object);
+        _controller = new SessionsController(_sessionServiceMock.Object, _userServiceMock.Object, _loggerMock.Object);
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext()
+        };
+    }
+
+    private void SetUserIdHeader(string userId)
+    {
+        _controller.HttpContext.Request.Headers["X-User-Id"] = userId;
+    }
+
+    private void SetCreatorUser(string userId = "creator-id")
+    {
+        SetUserIdHeader(userId);
+        _userServiceMock.Setup(s => s.ValidateUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = userId, Role = UserRole.Creator, IsActive = true, Username = "creator", DisplayName = "Creator User" });
+    }
+
+    private void SetAdminUser(string userId = "admin-id")
+    {
+        SetUserIdHeader(userId);
+        _userServiceMock.Setup(s => s.ValidateUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = userId, Role = UserRole.Admin, IsActive = true, Username = "admin", DisplayName = "Admin User" });
+    }
+
+    private void SetPlayerUser(string userId = "player-id")
+    {
+        SetUserIdHeader(userId);
+        _userServiceMock.Setup(s => s.ValidateUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = userId, Role = UserRole.Player, IsActive = true, Username = "player", DisplayName = "Player User" });
     }
 
     #region ListSessions Tests
@@ -39,7 +73,7 @@ public class SessionsControllerTests
             },
             TotalCount = 2
         };
-        _sessionServiceMock.Setup(s => s.ListSessionsAsync(It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.ListSessionsAsync(It.IsAny<User?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedResponse);
 
         // Act
@@ -61,7 +95,7 @@ public class SessionsControllerTests
             Sessions = new List<SessionInfoResponse>(),
             TotalCount = 0
         };
-        _sessionServiceMock.Setup(s => s.ListSessionsAsync(It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.ListSessionsAsync(It.IsAny<User?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedResponse);
 
         // Act
@@ -82,6 +116,7 @@ public class SessionsControllerTests
     public async Task CreateSession_ReturnsCreatedResult_WithSessionInfo()
     {
         // Arrange
+        SetCreatorUser();
         var request = new CreateSessionRequest
         {
             Model = "gpt-4",
@@ -95,7 +130,7 @@ public class SessionsControllerTests
             Status = "Active",
             CreatedAt = DateTime.UtcNow
         };
-        _sessionServiceMock.Setup(s => s.CreateSessionAsync(request, It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.CreateSessionAsync(request, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedResponse);
 
         // Act
@@ -114,6 +149,7 @@ public class SessionsControllerTests
     public async Task CreateSession_ReturnsBadRequest_WhenModelIsEmpty()
     {
         // Arrange
+        SetCreatorUser();
         var request = new CreateSessionRequest
         {
             Model = ""
@@ -133,6 +169,7 @@ public class SessionsControllerTests
     public async Task CreateSession_ReturnsBadRequest_WhenModelIsWhitespace()
     {
         // Arrange
+        SetCreatorUser();
         var request = new CreateSessionRequest
         {
             Model = "   "
@@ -151,13 +188,14 @@ public class SessionsControllerTests
     public async Task CreateSession_SetsCorrectRouteValues()
     {
         // Arrange
+        SetCreatorUser();
         var request = new CreateSessionRequest { Model = "gpt-4" };
         var expectedResponse = new SessionInfoResponse
         {
             SessionId = "session-abc",
             Model = "gpt-4"
         };
-        _sessionServiceMock.Setup(s => s.CreateSessionAsync(request, It.IsAny<CancellationToken>()))
+        _sessionServiceMock.Setup(s => s.CreateSessionAsync(request, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedResponse);
 
         // Act
@@ -221,6 +259,7 @@ public class SessionsControllerTests
     public async Task DeleteSession_ReturnsNoContent_WhenSessionDeleted()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "session-to-delete";
         _sessionServiceMock.Setup(s => s.DeleteSessionAsync(sessionId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -236,6 +275,7 @@ public class SessionsControllerTests
     public async Task DeleteSession_ReturnsNotFound_WhenSessionDoesNotExist()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "nonexistent-session";
         _sessionServiceMock.Setup(s => s.DeleteSessionAsync(sessionId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
@@ -253,6 +293,7 @@ public class SessionsControllerTests
     public async Task DeleteSession_CallsServiceWithCorrectSessionId()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "specific-session-id";
         _sessionServiceMock.Setup(s => s.DeleteSessionAsync(sessionId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -272,6 +313,7 @@ public class SessionsControllerTests
     public async Task ResumeSession_ReturnsOkResult_WhenSessionResumed()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "session-to-resume";
         var request = new ResumeSessionRequest { Streaming = true };
         var expectedResponse = new SessionInfoResponse
@@ -298,6 +340,7 @@ public class SessionsControllerTests
     public async Task ResumeSession_ReturnsOkResult_WithNullRequest()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "session-to-resume";
         var expectedResponse = new SessionInfoResponse
         {
@@ -321,6 +364,7 @@ public class SessionsControllerTests
     public async Task ResumeSession_ReturnsNotFound_WhenSessionDoesNotExist()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "nonexistent-session";
         var request = new ResumeSessionRequest();
         _sessionServiceMock.Setup(s => s.ResumeSessionAsync(sessionId, request, It.IsAny<CancellationToken>()))
@@ -343,6 +387,7 @@ public class SessionsControllerTests
     public async Task SendMessage_ReturnsOkResult_WhenMessageSent()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "test-session";
         var request = new SendMessageRequest { Prompt = "Hello, world!" };
         var expectedResponse = new SendMessageResponse
@@ -368,6 +413,7 @@ public class SessionsControllerTests
     public async Task SendMessage_ReturnsBadRequest_WhenPromptIsEmpty()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "test-session";
         var request = new SendMessageRequest { Prompt = "" };
 
@@ -385,6 +431,7 @@ public class SessionsControllerTests
     public async Task SendMessage_ReturnsBadRequest_WhenPromptIsWhitespace()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "test-session";
         var request = new SendMessageRequest { Prompt = "   " };
 
@@ -401,6 +448,7 @@ public class SessionsControllerTests
     public async Task SendMessage_ReturnsNotFound_WhenSessionNotFound()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "nonexistent-session";
         var request = new SendMessageRequest { Prompt = "Hello" };
         var expectedResponse = new SendMessageResponse
@@ -425,6 +473,7 @@ public class SessionsControllerTests
     public async Task SendMessage_ReturnsBadRequest_WhenSendFails()
     {
         // Arrange
+        SetAdminUser();
         var sessionId = "test-session";
         var request = new SendMessageRequest { Prompt = "Hello" };
         var expectedResponse = new SendMessageResponse
@@ -647,6 +696,127 @@ public class SessionsControllerTests
 
         // Assert
         _sessionServiceMock.Verify(s => s.GetPersistedHistoryAsync(sessionId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
+
+    #region Authorization Tests
+
+    [Fact]
+    public async Task CreateSession_ReturnsUnauthorized_WhenNoUserHeader()
+    {
+        // Arrange - no user header set
+        var request = new CreateSessionRequest { Model = "gpt-4" };
+
+        // Act
+        var result = await _controller.CreateSession(request, CancellationToken.None);
+
+        // Assert
+        var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task CreateSession_ReturnsForbidden_WhenPlayerRole()
+    {
+        // Arrange
+        SetPlayerUser();
+        var request = new CreateSessionRequest { Model = "gpt-4" };
+
+        // Act
+        var result = await _controller.CreateSession(request, CancellationToken.None);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(403, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteSession_ReturnsUnauthorized_WhenNoUserHeader()
+    {
+        // Arrange - no user header set
+        var sessionId = "test-session";
+
+        // Act
+        var result = await _controller.DeleteSession(sessionId, CancellationToken.None);
+
+        // Assert
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task DeleteSession_ReturnsForbidden_WhenPlayerRole()
+    {
+        // Arrange
+        SetPlayerUser();
+        var sessionId = "test-session";
+
+        // Act
+        var result = await _controller.DeleteSession(sessionId, CancellationToken.None);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(403, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResumeSession_ReturnsUnauthorized_WhenNoUserHeader()
+    {
+        // Arrange - no user header set
+        var sessionId = "test-session";
+
+        // Act
+        var result = await _controller.ResumeSession(sessionId, null, CancellationToken.None);
+
+        // Assert
+        var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task SendMessage_ReturnsUnauthorized_WhenNoUserHeader()
+    {
+        // Arrange - no user header set
+        var sessionId = "test-session";
+        var request = new SendMessageRequest { Prompt = "Hello" };
+
+        // Act
+        var result = await _controller.SendMessage(sessionId, request, CancellationToken.None);
+
+        // Assert
+        var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task CreateSession_Succeeds_WhenCreatorRole()
+    {
+        // Arrange
+        SetCreatorUser();
+        var request = new CreateSessionRequest { Model = "gpt-4" };
+        var expectedResponse = new SessionInfoResponse { SessionId = "new-session", Model = "gpt-4" };
+        _sessionServiceMock.Setup(s => s.CreateSessionAsync(request, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedResponse);
+
+        // Act
+        var result = await _controller.CreateSession(request, CancellationToken.None);
+
+        // Assert
+        Assert.IsType<CreatedAtActionResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task CreateSession_Succeeds_WhenAdminRole()
+    {
+        // Arrange
+        SetAdminUser();
+        var request = new CreateSessionRequest { Model = "gpt-4" };
+        var expectedResponse = new SessionInfoResponse { SessionId = "new-session", Model = "gpt-4" };
+        _sessionServiceMock.Setup(s => s.CreateSessionAsync(request, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedResponse);
+
+        // Act
+        var result = await _controller.CreateSession(request, CancellationToken.None);
+
+        // Assert
+        Assert.IsType<CreatedAtActionResult>(result.Result);
     }
 
     #endregion

@@ -44,4 +44,14 @@ public class SessionInfoResponse
     /// Summary of the session conversation.
     /// </summary>
     public string? Summary { get; set; }
+
+    /// <summary>
+    /// The user ID of the creator who owns this session.
+    /// </summary>
+    public string? CreatorUserId { get; set; }
+
+    /// <summary>
+    /// The display name of the creator who owns this session.
+    /// </summary>
+    public string? CreatorDisplayName { get; set; }
 }

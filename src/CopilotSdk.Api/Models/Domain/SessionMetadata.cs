@@ -36,6 +36,11 @@ public class SessionMetadata
     public bool IsRemote { get; set; }
 
     /// <summary>
+    /// The user ID of the creator who owns this session.
+    /// </summary>
+    public string? CreatorUserId { get; set; }
+
+    /// <summary>
     /// The configuration used to create this session.
     /// </summary>
     public SessionConfig? Config { get; set; }

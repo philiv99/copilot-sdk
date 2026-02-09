@@ -4,7 +4,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { TabContainer } from './TabContainer';
-import { SessionProvider } from '../../context';
+import { SessionProvider, UserProvider } from '../../context';
 import { BrowserRouter } from 'react-router-dom';
 
 // Mock the API module
@@ -61,12 +61,34 @@ jest.mock('@microsoft/signalr', () => ({
   HubConnectionState: { Connected: 'Connected', Disconnected: 'Disconnected' },
 }));
 
+// Mock the user API module
+jest.mock('../../api/userApi', () => ({
+  getCurrentUser: jest.fn().mockResolvedValue({
+    id: 'admin-1',
+    username: 'admin',
+    displayName: 'Admin',
+    email: 'admin@local',
+    role: 'Admin',
+    avatarType: 'Preset',
+    avatarData: 'wizard',
+    isActive: true,
+    createdAt: new Date().toISOString(),
+  }),
+  getStoredUserId: jest.fn().mockReturnValue('admin-1'),
+  setStoredUserId: jest.fn(),
+  login: jest.fn(),
+  register: jest.fn(),
+  logout: jest.fn(),
+}));
+
 const renderWithProviders = (ui: React.ReactElement) => {
   return render(
     <BrowserRouter>
-      <SessionProvider autoConnectHub={false}>
-        {ui}
-      </SessionProvider>
+      <UserProvider>
+        <SessionProvider autoConnectHub={false}>
+          {ui}
+        </SessionProvider>
+      </UserProvider>
     </BrowserRouter>
   );
 };

@@ -295,6 +295,34 @@ public class PersistenceService : IPersistenceService
         return sessionIds;
     }
 
+    /// <inheritdoc/>
+    public async Task<int> AssignOrphanedSessionsAsync(string creatorUserId, CancellationToken cancellationToken = default)
+    {
+        var count = 0;
+        try
+        {
+            var sessions = await LoadAllSessionsAsync(cancellationToken);
+            foreach (var session in sessions)
+            {
+                if (string.IsNullOrEmpty(session.CreatorUserId))
+                {
+                    session.CreatorUserId = creatorUserId;
+                    await SaveSessionAsync(session, cancellationToken);
+                    count++;
+                }
+            }
+            if (count > 0)
+            {
+                _logger.LogInformation("Assigned {Count} orphaned sessions to user {UserId}", count, creatorUserId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to assign orphaned sessions to user {UserId}", creatorUserId);
+        }
+        return count;
+    }
+
     #endregion
 
     #region Message Persistence
@@ -362,6 +390,38 @@ public class PersistenceService : IPersistenceService
         var json = await File.ReadAllTextAsync(filePath, cancellationToken);
         return JsonSerializer.Deserialize<PersistedSessionData>(json, JsonOptions);
     }
+
+    #endregion
+
+    #region User Persistence (not supported in legacy JSON persistence)
+
+    /// <inheritdoc/>
+    public Task SaveUserAsync(Models.Domain.User user, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("User persistence is only available with SQLite persistence.");
+
+    /// <inheritdoc/>
+    public Task<Models.Domain.User?> GetUserByIdAsync(string userId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("User persistence is only available with SQLite persistence.");
+
+    /// <inheritdoc/>
+    public Task<Models.Domain.User?> GetUserByUsernameAsync(string username, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("User persistence is only available with SQLite persistence.");
+
+    /// <inheritdoc/>
+    public Task<Models.Domain.User?> GetUserByEmailAsync(string email, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("User persistence is only available with SQLite persistence.");
+
+    /// <inheritdoc/>
+    public Task<List<Models.Domain.User>> GetAllUsersAsync(bool? activeOnly = null, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("User persistence is only available with SQLite persistence.");
+
+    /// <inheritdoc/>
+    public Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("User persistence is only available with SQLite persistence.");
+
+    /// <inheritdoc/>
+    public Task<int> GetUserCountAsync(CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("User persistence is only available with SQLite persistence.");
 
     #endregion
 }

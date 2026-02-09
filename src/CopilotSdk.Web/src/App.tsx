@@ -3,8 +3,9 @@
  */
 import React from 'react';
 import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
-import { CopilotClientProvider, SessionProvider } from './context';
-import { MainLayout, ErrorBoundary, ToastProvider } from './components';
+import { CopilotClientProvider, SessionProvider, UserProvider } from './context';
+import { MainLayout, ErrorBoundary, ToastProvider, ProtectedRoute } from './components';
+import { LoginView, RegisterView, ProfileView, AdminUsersView, ForgotCredentialsView } from './views';
 import './App.css';
 
 /**
@@ -21,17 +22,27 @@ function MainLayoutWithParams() {
 function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <ToastProvider maxToasts={5}>
-          <CopilotClientProvider autoRefresh={true} refreshInterval={5000}>
-            <SessionProvider autoConnectHub={true}>
-              <Routes>
-                <Route path="/" element={<MainLayoutWithParams />} />
-                <Route path="/sessions" element={<MainLayoutWithParams />} />
-                <Route path="/sessions/:sessionId" element={<MainLayoutWithParams />} />
-              </Routes>
-            </SessionProvider>
-          </CopilotClientProvider>
+          <UserProvider>
+            <CopilotClientProvider autoRefresh={true} refreshInterval={5000}>
+              <SessionProvider autoConnectHub={true}>
+                <Routes>
+                  {/* Public routes */}
+                  <Route path="/login" element={<LoginView />} />
+                  <Route path="/register" element={<RegisterView />} />
+                  <Route path="/forgot-credentials" element={<ForgotCredentialsView />} />
+
+                  {/* Protected routes */}
+                  <Route path="/" element={<ProtectedRoute><MainLayoutWithParams /></ProtectedRoute>} />
+                  <Route path="/sessions" element={<ProtectedRoute><MainLayoutWithParams /></ProtectedRoute>} />
+                  <Route path="/sessions/:sessionId" element={<ProtectedRoute><MainLayoutWithParams /></ProtectedRoute>} />
+                  <Route path="/profile" element={<ProtectedRoute><ProfileView /></ProtectedRoute>} />
+                  <Route path="/admin/users" element={<ProtectedRoute requiredRole="Admin"><AdminUsersView /></ProtectedRoute>} />
+                </Routes>
+              </SessionProvider>
+            </CopilotClientProvider>
+          </UserProvider>
         </ToastProvider>
       </BrowserRouter>
     </ErrorBoundary>

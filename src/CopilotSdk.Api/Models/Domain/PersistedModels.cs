@@ -38,6 +38,11 @@ public class PersistedSessionData
     public bool IsRemote { get; set; }
 
     /// <summary>
+    /// The user ID of the creator who owns this session.
+    /// </summary>
+    public string? CreatorUserId { get; set; }
+
+    /// <summary>
     /// The full session configuration.
     /// </summary>
     public PersistedSessionConfig? Config { get; set; }

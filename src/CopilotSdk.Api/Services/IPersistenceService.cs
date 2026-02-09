@@ -74,6 +74,14 @@ public interface IPersistenceService
     /// <returns>List of session IDs.</returns>
     List<string> GetPersistedSessionIds();
 
+    /// <summary>
+    /// Assigns a CreatorUserId to all sessions that have no creator assigned.
+    /// </summary>
+    /// <param name="creatorUserId">The user ID to assign as creator.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of sessions updated.</returns>
+    Task<int> AssignOrphanedSessionsAsync(string creatorUserId, CancellationToken cancellationToken = default);
+
     #endregion
 
     #region Message Persistence
@@ -93,6 +101,45 @@ public interface IPersistenceService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of messages for the session.</returns>
     Task<List<PersistedMessage>> GetMessagesAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    #endregion
+
+    #region User Persistence
+
+    /// <summary>
+    /// Saves a user to the database (insert or update).
+    /// </summary>
+    Task SaveUserAsync(Models.Domain.User user, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a user by their ID.
+    /// </summary>
+    Task<Models.Domain.User?> GetUserByIdAsync(string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a user by their username (case-insensitive).
+    /// </summary>
+    Task<Models.Domain.User?> GetUserByUsernameAsync(string username, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a user by their email (case-insensitive).
+    /// </summary>
+    Task<Models.Domain.User?> GetUserByEmailAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets all users, optionally filtered by active status.
+    /// </summary>
+    Task<List<Models.Domain.User>> GetAllUsersAsync(bool? activeOnly = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a user by their ID (hard delete).
+    /// </summary>
+    Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the total user count.
+    /// </summary>
+    Task<int> GetUserCountAsync(CancellationToken cancellationToken = default);
 
     #endregion
 }
