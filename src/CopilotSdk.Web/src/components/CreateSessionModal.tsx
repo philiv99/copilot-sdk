@@ -131,23 +131,8 @@ export function CreateSessionModal({
     }
   }, [model, streaming, sessionId, systemMessage, tools, provider, createSession, resetForm, onSessionCreated, isValidSessionId]);
 
-  // Handle backdrop click
-  const handleBackdropClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      handleClose();
-    }
-  }, [handleClose]);
-
-  // Handle escape key
-  React.useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        handleClose();
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen, handleClose]);
+  // Modal is a true modal - no backdrop click or escape key dismissal
+  // Can only be closed via Cancel or X button inside the form
 
   if (!isOpen) {
     return null;
@@ -156,7 +141,7 @@ export function CreateSessionModal({
   const isLoading = isSubmitting || isCreating;
 
   return (
-    <div className="modal-backdrop" onClick={handleBackdropClick} data-testid="create-session-modal">
+    <div className="modal-backdrop" data-testid="create-session-modal">
       <div className="modal-container" role="dialog" aria-labelledby="modal-title">
         <div className="modal-header">
           <h2 id="modal-title" className="modal-title">Create New Session</h2>
