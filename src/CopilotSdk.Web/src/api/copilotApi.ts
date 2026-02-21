@@ -39,8 +39,17 @@ export interface ApiError {
  */
 export interface DevServerResponse {
   success: boolean;
+  pid: number;
   port: number;
   url: string;
+  message: string;
+}
+
+/**
+ * Dev server stop response interface.
+ */
+export interface DevServerStopResponse {
+  stopped: boolean;
   message: string;
 }
 
@@ -49,6 +58,7 @@ export interface DevServerResponse {
  */
 export interface DevServerStatusResponse {
   isRunning: boolean;
+  pid?: number;
   port?: number;
   url?: string;
 }
@@ -417,10 +427,12 @@ export async function setSessionAppPath(sessionId: string, appPath: string): Pro
 /**
  * Stop the development server for a session.
  * @param sessionId The session ID.
+ * @param pid The process ID of the dev server to stop.
  */
-export async function stopDevServer(sessionId: string): Promise<void> {
+export async function stopDevServer(sessionId: string, pid: number): Promise<DevServerStopResponse> {
   try {
-    await apiClient.post(`/sessions/${sessionId}/dev-server/stop`);
+    const response = await apiClient.post<DevServerStopResponse>(`/sessions/${sessionId}/dev-server/stop`, { pid });
+    return response.data;
   } catch (error) {
     throw new Error(extractErrorMessage(error));
   }

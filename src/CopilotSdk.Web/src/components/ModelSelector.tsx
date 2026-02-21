@@ -15,6 +15,7 @@ const DEFAULT_MODELS: ModelInfo[] = [
   { value: 'gpt-4o', label: 'GPT-4o', description: 'Most capable GPT-4o model for complex tasks' },
   { value: 'gpt-4o-mini', label: 'GPT-4o Mini', description: 'Fast and efficient for simpler tasks' },
   { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', description: 'Balanced performance and speed from Anthropic' },
+  { value: 'claude-opus-4.6', label: 'Claude Opus 4.6', description: 'Latest Claude model with state-of-the-art performance' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', description: 'Google\'s most capable model' },
 ];
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using CopilotSdk.Api.Hubs;
 using CopilotSdk.Api.Managers;
 using CopilotSdk.Api.Models.Domain;
@@ -237,11 +238,80 @@ public class SessionEventDispatcher
                 await _sessionManager.AppendMessagesAsync(sessionId, new[] { message });
                 _logger.LogDebug("Persisted {EventType} to session {SessionId}", sessionEvent.Type, sessionId);
             }
+
+            // When a tool execution completes, try to extract the repo path from the result
+            // and persist it as the session's AppPath (for the Play button / dev server).
+            if (sessionEvent is ToolExecutionCompleteEvent toolEvent)
+            {
+                await TryExtractAndPersistAppPathAsync(sessionId, toolEvent.Data.Result?.Content);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to persist event {EventType} to session {SessionId}", sessionEvent.Type, sessionId);
         }
+    }
+
+    /// <summary>
+    /// Regex that matches repo paths like C:\development\repos\jestquest\... or C:\development\repos\jestquest
+    /// Captures the folder name immediately after the repos\ prefix (letters, digits, hyphens, underscores only).
+    /// </summary>
+    private static readonly Regex RepoPathRegex = new(
+        @"[A-Za-z]:\\[^""'\s]*?repos[/\\]([A-Za-z0-9][A-Za-z0-9_\-]*)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Attempts to extract the repository folder path from tool execution output
+    /// and persist it as the session's AppPath if not already set.
+    /// Tool results contain paths like "Created file C:\development\repos\jestquest\src\App.tsx".
+    /// </summary>
+    private async Task TryExtractAndPersistAppPathAsync(string sessionId, string? toolResult)
+    {
+        if (string.IsNullOrEmpty(toolResult) || _sessionManager == null)
+            return;
+
+        try
+        {
+            // Only proceed if the session doesn't already have an AppPath
+            var metadata = await _sessionManager.GetMetadataAsync(sessionId);
+            if (metadata == null || !string.IsNullOrEmpty(metadata.AppPath))
+                return;
+
+            var repoFolder = ExtractRepoFolder(toolResult);
+            if (repoFolder == null)
+                return;
+
+            // Exclude the copilot-sdk project itself
+            if (repoFolder.Equals("copilot-sdk", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var reposDir = @"C:\development\repos";
+            var fullPath = Path.Combine(reposDir, repoFolder);
+
+            // Verify the folder exists and has a package.json
+            if (Directory.Exists(fullPath) && File.Exists(Path.Combine(fullPath, "package.json")))
+            {
+                metadata.AppPath = fullPath;
+                await _sessionManager.PersistSessionAsync(sessionId, metadata);
+                _logger.LogInformation(
+                    "Auto-detected and persisted AppPath for session {SessionId}: {AppPath}",
+                    sessionId, fullPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to extract AppPath from tool result for session {SessionId}", sessionId);
+        }
+    }
+
+    /// <summary>
+    /// Extracts the repo folder name from a string containing a repo path reference.
+    /// Returns null if no repo path is found.
+    /// </summary>
+    internal static string? ExtractRepoFolder(string text)
+    {
+        var match = RepoPathRegex.Match(text);
+        return match.Success ? match.Groups[1].Value : null;
     }
 
     #endregion

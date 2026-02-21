@@ -92,9 +92,9 @@ public interface ISessionService
     Task<DevServerResponse> StartDevServerAsync(string sessionId, string? appPath, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Stops the development server for a session.
+    /// Stops the development server for a session by killing the process with the given PID.
     /// </summary>
-    Task StopDevServerAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task<DevServerStopResponse> StopDevServerAsync(string sessionId, int pid, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the status of the development server for a session.
@@ -108,4 +108,12 @@ public interface ISessionService
     /// <param name="appPath">The absolute path to the app directory.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task SetAppPathAsync(string sessionId, string appPath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Backfills AppPath for all sessions that don't have one yet by scanning their stored messages
+    /// for repo path references (e.g., "Created file C:\development\repos\jestquest\...").
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of sessions that were updated.</returns>
+    Task<int> BackfillAppPathsAsync(CancellationToken cancellationToken = default);
 }

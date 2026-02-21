@@ -349,4 +349,9 @@ secrets.json
 *.swp
 *.swo
 
+# SQLite databases (may contain user data and secrets)
+src/data/*.db
+src/data/*.db-shm
+src/data/*.db-wal
+
 

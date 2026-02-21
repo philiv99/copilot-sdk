@@ -11,6 +11,11 @@ public class DevServerResponse
     public bool Success { get; set; }
 
     /// <summary>
+    /// Process ID of the dev server.
+    /// </summary>
+    public int Pid { get; set; }
+
+    /// <summary>
     /// Port number where the server is running.
     /// </summary>
     public int Port { get; set; }
@@ -27,6 +32,22 @@ public class DevServerResponse
 }
 
 /// <summary>
+/// Response from stopping a development server.
+/// </summary>
+public class DevServerStopResponse
+{
+    /// <summary>
+    /// Whether the server was successfully stopped.
+    /// </summary>
+    public bool Stopped { get; set; }
+
+    /// <summary>
+    /// Informational message.
+    /// </summary>
+    public string Message { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// Response for dev server status check.
 /// </summary>
 public class DevServerStatusResponse
@@ -35,6 +56,11 @@ public class DevServerStatusResponse
     /// Whether the dev server is currently running.
     /// </summary>
     public bool IsRunning { get; set; }
+
+    /// <summary>
+    /// Process ID if running.
+    /// </summary>
+    public int? Pid { get; set; }
 
     /// <summary>
     /// Port number if running.

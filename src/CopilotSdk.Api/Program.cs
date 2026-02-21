@@ -20,7 +20,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:5173")
+        policy.SetIsOriginAllowed(origin => origin.StartsWith("http://localhost"))
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials(); // Required for SignalR
@@ -103,6 +103,9 @@ await SeedDefaultAdminAsync(app.Services);
 
 // Seed default creator "Fred" and assign orphaned sessions
 await SeedDefaultCreatorAsync(app.Services);
+
+// Backfill AppPath for sessions that don't have one (scans tool results for repo path references)
+await BackfillAppPathsAsync(app.Services);
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -224,5 +227,28 @@ static async Task SeedDefaultCreatorAsync(IServiceProvider services)
     catch (Exception ex)
     {
         logger.LogWarning(ex, "Failed to seed default creator account");
+    }
+}
+
+/// <summary>
+/// Backfills AppPath for sessions that don't have one set.
+/// Scans stored tool-result messages for repo path references like "Created file C:\development\repos\jestquest\..."
+/// </summary>
+static async Task BackfillAppPathsAsync(IServiceProvider services)
+{
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        using var scope = services.CreateScope();
+        var sessionService = scope.ServiceProvider.GetRequiredService<ISessionService>();
+        var updated = await sessionService.BackfillAppPathsAsync();
+        if (updated > 0)
+        {
+            logger.LogInformation("Backfilled AppPath for {Count} sessions on startup", updated);
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to backfill AppPath for sessions");
     }
 }

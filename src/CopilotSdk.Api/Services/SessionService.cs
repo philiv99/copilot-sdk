@@ -1,3 +1,4 @@
+using CopilotSdk.Api.EventHandlers;
 using CopilotSdk.Api.Managers;
 using CopilotSdk.Api.Models.Domain;
 using CopilotSdk.Api.Models.Requests;
@@ -643,21 +644,25 @@ public class SessionService : ISessionService
     /// <inheritdoc/>
     public async Task<DevServerResponse> StartDevServerAsync(string sessionId, string? appPath, CancellationToken cancellationToken = default)
     {
-        // Get session metadata
+        // Get session metadata (may be null for sessions that only exist as repos)
         var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
-        if (metadata == null)
-        {
-            throw new InvalidOperationException($"Session {sessionId} not found");
-        }
 
-        // Use provided appPath or try to infer from session metadata or search for the app
-        var targetPath = appPath ?? metadata.AppPath ?? await FindAppPathAsync(sessionId, cancellationToken);
+        // Use provided appPath, then session metadata, then auto-detect
+        var targetPath = appPath ?? metadata?.AppPath ?? await FindAppPathAsync(sessionId, cancellationToken);
+        _logger.LogInformation("Starting dev server for session {SessionId} with resolved path: {TargetPath}", sessionId, targetPath);
+
+        // Persist the resolved path immediately so future attempts don't need to re-detect
+        if (metadata != null && string.IsNullOrEmpty(metadata.AppPath) && targetPath != null)
+        {
+            metadata.AppPath = targetPath;
+            await _sessionManager.PersistSessionAsync(sessionId, metadata, cancellationToken);
+        }
 
         var result = await _devServerService.StartDevServerAsync(sessionId, targetPath, cancellationToken);
         
-        if (result.success)
+        if (result.success && metadata != null)
         {
-            // Update session metadata
+            // Update session metadata with running server info
             metadata.AppPath = targetPath;
             metadata.DevServerPort = result.port;
             metadata.IsDevServerRunning = true;
@@ -667,6 +672,7 @@ public class SessionService : ISessionService
         return new DevServerResponse
         {
             Success = result.success,
+            Pid = result.pid,
             Port = result.port,
             Url = result.success ? result.url : string.Empty,
             Message = result.message
@@ -674,27 +680,37 @@ public class SessionService : ISessionService
     }
 
     /// <inheritdoc/>
-    public async Task StopDevServerAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<DevServerStopResponse> StopDevServerAsync(string sessionId, int pid, CancellationToken cancellationToken = default)
     {
-        await _devServerService.StopDevServerAsync(sessionId, cancellationToken);
+        var (stopped, message) = await _devServerService.StopDevServerAsync(sessionId, pid, cancellationToken);
         
-        var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
-        if (metadata != null)
+        if (stopped)
         {
-            metadata.IsDevServerRunning = false;
-            metadata.DevServerPort = null;
-            await _sessionManager.PersistSessionAsync(sessionId, metadata, cancellationToken);
+            var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
+            if (metadata != null)
+            {
+                metadata.IsDevServerRunning = false;
+                metadata.DevServerPort = null;
+                await _sessionManager.PersistSessionAsync(sessionId, metadata, cancellationToken);
+            }
         }
+
+        return new DevServerStopResponse
+        {
+            Stopped = stopped,
+            Message = message
+        };
     }
 
     /// <inheritdoc/>
     public async Task<DevServerStatusResponse> GetDevServerStatusAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        var (isRunning, port) = await _devServerService.GetDevServerStatusAsync(sessionId, cancellationToken);
+        var (isRunning, pid, port) = await _devServerService.GetDevServerStatusAsync(sessionId, cancellationToken);
         
         return new DevServerStatusResponse
         {
             IsRunning = isRunning,
+            Pid = pid,
             Port = port,
             Url = isRunning && port.HasValue ? _devServerService.GetDevServerUrl(port.Value) : null
         };
@@ -712,13 +728,28 @@ public class SessionService : ISessionService
 
     /// <summary>
     /// Attempts to find the app path for a session by checking common locations.
+    /// Uses multiple strategies: exact name match, normalized name match, substring match,
+    /// and finally a timestamp-based heuristic (repo created close to session creation time).
     /// </summary>
-    private Task<string> FindAppPathAsync(string sessionId, CancellationToken cancellationToken)
+    private async Task<string> FindAppPathAsync(string sessionId, CancellationToken cancellationToken)
     {
         var reposDir = @"C:\development\repos";
         var normalizedSessionId = NormalizeName(sessionId);
 
-        // 1. Try exact match by session ID
+        // Collect all candidate repos (directories with package.json) up front
+        var candidateRepos = new List<(string Path, string DirName)>();
+        if (Directory.Exists(reposDir))
+        {
+            foreach (var dir in Directory.GetDirectories(reposDir))
+            {
+                if (File.Exists(Path.Combine(dir, "package.json")))
+                {
+                    candidateRepos.Add((dir, Path.GetFileName(dir)));
+                }
+            }
+        }
+
+        // --- Strategy 1: Exact match by session ID ---
         var possiblePaths = new[]
         {
             Path.Combine(reposDir, sessionId),
@@ -728,38 +759,35 @@ public class SessionService : ISessionService
 
         foreach (var path in possiblePaths)
         {
-            if (Directory.Exists(path) && File.Exists(Path.Combine(path, "package.json")))
+            if (candidateRepos.Any(c => c.Path.Equals(path, StringComparison.OrdinalIgnoreCase)))
             {
-                _logger.LogInformation("Found app for session {SessionId} at {Path}", sessionId, path);
-                return Task.FromResult(path);
+                _logger.LogInformation("Found app for session {SessionId} at {Path} (exact)", sessionId, path);
+                return path;
             }
         }
 
-        // 2. Check inside the copilot-sdk project for embedded apps (e.g. HelicoptorGame)
+        // --- Strategy 2: Check inside the copilot-sdk project for embedded apps ---
         var projectRoot = Path.GetDirectoryName(AppContext.BaseDirectory);
-        // Walk up to find the src directory
         var currentDir = projectRoot;
         while (currentDir != null)
         {
             var apiDir = Path.Combine(currentDir, "src", "CopilotSdk.Api");
             if (Directory.Exists(apiDir))
             {
-                // Check if session ID matches a subdirectory under the API project
                 var embeddedPath = Path.Combine(apiDir, sessionId);
                 if (Directory.Exists(embeddedPath) && File.Exists(Path.Combine(embeddedPath, "package.json")))
                 {
                     _logger.LogInformation("Found embedded app for session {SessionId} at {Path}", sessionId, embeddedPath);
-                    return Task.FromResult(embeddedPath);
+                    return embeddedPath;
                 }
 
-                // Also check subdirectories for fuzzy match 
                 foreach (var dir in Directory.GetDirectories(apiDir))
                 {
                     if (File.Exists(Path.Combine(dir, "package.json")) &&
                         NormalizeName(Path.GetFileName(dir)) == normalizedSessionId)
                     {
                         _logger.LogInformation("Found embedded app for session {SessionId} at {Path} (fuzzy)", sessionId, dir);
-                        return Task.FromResult(dir);
+                        return dir;
                     }
                 }
 
@@ -769,52 +797,89 @@ public class SessionService : ISessionService
         }
 
         // Also check directly from the known project structure path
-        var knownProjectPaths = new[]
+        var knownProjectPath = Path.Combine(reposDir, "copilot-sdk", "src", "CopilotSdk.Api", sessionId);
+        if (Directory.Exists(knownProjectPath) && File.Exists(Path.Combine(knownProjectPath, "package.json")))
         {
-            Path.Combine(reposDir, "copilot-sdk", "src", "CopilotSdk.Api", sessionId),
-        };
-        foreach (var path in knownProjectPaths)
+            _logger.LogInformation("Found app for session {SessionId} at {Path}", sessionId, knownProjectPath);
+            return knownProjectPath;
+        }
+
+        // --- Strategy 3: Normalized name match across repos ---
+        foreach (var (path, dirName) in candidateRepos)
         {
-            if (Directory.Exists(path) && File.Exists(Path.Combine(path, "package.json")))
+            if (NormalizeName(dirName) == normalizedSessionId)
             {
-                _logger.LogInformation("Found app for session {SessionId} at {Path}", sessionId, path);
-                return Task.FromResult(path);
+                _logger.LogInformation("Found app for session {SessionId} at {Path} (normalized match)", sessionId, path);
+                return path;
             }
         }
 
-        // 3. Fuzzy match across all repos: bidirectional substring + normalized name comparison
-        if (Directory.Exists(reposDir))
+        // --- Strategy 4: Bidirectional substring match ---
+        foreach (var (path, dirName) in candidateRepos)
         {
-            var directories = Directory.GetDirectories(reposDir);
-            
-            // First pass: normalized name equality
-            foreach (var dir in directories)
+            if (dirName.Contains(sessionId, StringComparison.OrdinalIgnoreCase) ||
+                sessionId.Contains(dirName, StringComparison.OrdinalIgnoreCase))
             {
-                var dirName = Path.GetFileName(dir);
-                if (NormalizeName(dirName) == normalizedSessionId &&
-                    File.Exists(Path.Combine(dir, "package.json")))
-                {
-                    _logger.LogInformation("Found app for session {SessionId} at {Path} (normalized match)", sessionId, dir);
-                    return Task.FromResult(dir);
-                }
+                _logger.LogInformation("Found app for session {SessionId} at {Path} (substring match)", sessionId, path);
+                return path;
             }
+        }
 
-            // Second pass: bidirectional substring match
-            foreach (var dir in directories)
-            {
-                var dirName = Path.GetFileName(dir);
-                if ((dirName.Contains(sessionId, StringComparison.OrdinalIgnoreCase) ||
-                     sessionId.Contains(dirName, StringComparison.OrdinalIgnoreCase)) &&
-                    File.Exists(Path.Combine(dir, "package.json")))
+        // --- Strategy 5: Timestamp-based heuristic ---
+        // When the session name has no string relation to the repo folder, try to match
+        // by creation time: find the repo folder created closest to the session start.
+        var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
+        if (metadata?.CreatedAt != null && candidateRepos.Count > 0)
+        {
+            var sessionCreated = metadata.CreatedAt.Value;
+            // Gather already-mapped app paths from other sessions so we can exclude them
+            var allMetadata = await _sessionManager.GetAllMetadataAsync(cancellationToken);
+            var usedPaths = new HashSet<string>(
+                allMetadata
+                    .Where(m => !string.IsNullOrEmpty(m.AppPath) && m.SessionId != sessionId)
+                    .Select(m => m.AppPath!),
+                StringComparer.OrdinalIgnoreCase);
+
+            // Score each candidate by how close its creation time is to the session creation
+            var scored = candidateRepos
+                .Where(c => !usedPaths.Contains(c.Path))                 // exclude repos already claimed by other sessions
+                .Where(c => !c.DirName.Equals("copilot-sdk", StringComparison.OrdinalIgnoreCase)) // exclude this project
+                .Select(c =>
                 {
-                    _logger.LogInformation("Found app for session {SessionId} at {Path} (fuzzy match)", sessionId, dir);
-                    return Task.FromResult(dir);
+                    var dirInfo = new DirectoryInfo(c.Path);
+                    // Use the earlier of CreationTime and LastWriteTime (some folders are moved/copied)
+                    var folderTime = dirInfo.CreationTime < dirInfo.LastWriteTime
+                        ? dirInfo.CreationTime
+                        : dirInfo.LastWriteTime;
+                    var diff = Math.Abs((folderTime.ToUniversalTime() - sessionCreated).TotalMinutes);
+                    return new { c.Path, c.DirName, FolderTime = folderTime, DiffMinutes = diff };
+                })
+                .OrderBy(x => x.DiffMinutes)
+                .ToList();
+
+            if (scored.Count > 0)
+            {
+                var best = scored[0];
+                // Only accept if the closest repo was created within 24 hours of the session
+                if (best.DiffMinutes <= 24 * 60)
+                {
+                    _logger.LogInformation(
+                        "Found app for session {SessionId} at {Path} (timestamp match, diff={DiffMin:F0} min, folder created {FolderTime})",
+                        sessionId, best.Path, best.DiffMinutes, best.FolderTime);
+                    return best.Path;
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Closest repo for session {SessionId} is {Path} but {DiffMin:F0} min away — too far to auto-match",
+                        sessionId, best.Path, best.DiffMinutes);
                 }
             }
         }
 
         // Default to the session ID path even if it doesn't exist (will fail with proper error)
-        return Task.FromResult(Path.Combine(reposDir, sessionId));
+        _logger.LogWarning("Could not auto-detect app path for session {SessionId}, defaulting to {Path}", sessionId, Path.Combine(reposDir, sessionId));
+        return Path.Combine(reposDir, sessionId);
     }
 
     /// <summary>
@@ -827,5 +892,81 @@ public class SessionService : ISessionService
         lower = lower.Replace("game", "").Replace("app", "").Replace("the", "")
                      .Replace("-", "").Replace("_", "").Replace(" ", "");
         return lower;
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> BackfillAppPathsAsync(CancellationToken cancellationToken = default)
+    {
+        var allMetadata = await _sessionManager.GetAllMetadataAsync(cancellationToken);
+
+        // Process all sessions: those without AppPath, plus those whose AppPath may be incorrect
+        _logger.LogInformation("Checking AppPath for {Count} sessions", allMetadata.Count);
+        var updated = 0;
+
+        foreach (var metadata in allMetadata)
+        {
+            try
+            {
+                var detectedFolder = await DetectRepoFolderFromMessagesAsync(metadata.SessionId, cancellationToken);
+                if (detectedFolder == null)
+                    continue;
+
+                var reposDir = @"C:\development\repos";
+                var fullPath = Path.Combine(reposDir, detectedFolder);
+
+                if (!Directory.Exists(fullPath) || !File.Exists(Path.Combine(fullPath, "package.json")))
+                {
+                    _logger.LogDebug(
+                        "Session {SessionId}: detected folder '{Folder}' but path does not exist or has no package.json",
+                        metadata.SessionId, detectedFolder);
+                    continue;
+                }
+
+                // Check if the existing AppPath already matches
+                if (string.Equals(metadata.AppPath, fullPath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var action = string.IsNullOrEmpty(metadata.AppPath) ? "Set" : $"Corrected (was: {metadata.AppPath})";
+                metadata.AppPath = fullPath;
+                await _sessionManager.PersistSessionAsync(metadata.SessionId, metadata, cancellationToken);
+                updated++;
+                _logger.LogInformation(
+                    "{Action} AppPath for session {SessionId}: {AppPath}",
+                    action, metadata.SessionId, fullPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error backfilling AppPath for session {SessionId}", metadata.SessionId);
+            }
+        }
+
+        _logger.LogInformation("Updated AppPath for {Updated}/{Total} sessions", updated, allMetadata.Count);
+        return updated;
+    }
+
+    /// <summary>
+    /// Scans persisted messages for a session to detect the repo folder from tool results or assistant content.
+    /// </summary>
+    private async Task<string?> DetectRepoFolderFromMessagesAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        var messages = await _sessionManager.GetPersistedMessagesAsync(sessionId, cancellationToken);
+
+        // Scan tool results for repo path references (most reliable)
+        foreach (var msg in messages.Where(m => m.Role == "tool" && !string.IsNullOrEmpty(m.ToolResult)))
+        {
+            var folder = SessionEventDispatcher.ExtractRepoFolder(msg.ToolResult!);
+            if (folder != null && !folder.Equals("copilot-sdk", StringComparison.OrdinalIgnoreCase))
+                return folder;
+        }
+
+        // Fall back to scanning assistant message content
+        foreach (var msg in messages.Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content)))
+        {
+            var folder = SessionEventDispatcher.ExtractRepoFolder(msg.Content!);
+            if (folder != null && !folder.Equals("copilot-sdk", StringComparison.OrdinalIgnoreCase))
+                return folder;
+        }
+
+        return null;
     }
 }

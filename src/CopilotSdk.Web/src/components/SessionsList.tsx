@@ -1,13 +1,21 @@
 /**
  * Sessions list component displaying all sessions with actions.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession, useUser } from '../context';
 import { SessionInfoResponse } from '../types';
 import { Spinner, CardSkeleton } from './Loading';
-import { startDevServer, setSessionAppPath } from '../api/copilotApi';
+import { startDevServer, stopDevServer, getDevServerStatus } from '../api/copilotApi';
 import './SessionsList.css';
+
+/**
+ * Tracks a running dev server for a session.
+ */
+interface RunningServer {
+  pid: number;
+  url: string;
+}
 
 /**
  * Props for the SessionsList component.
@@ -91,6 +99,36 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [runningServers, setRunningServers] = useState<Record<string, RunningServer>>({});
+
+  // On mount (and when sessions change), check each session for an already-running dev server
+  useEffect(() => {
+    if (!sessions || sessions.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const updates: Record<string, RunningServer> = {};
+      await Promise.all(
+        sessions.map(async (s) => {
+          try {
+            const status = await getDevServerStatus(s.sessionId);
+            if (status.isRunning && status.pid && status.port) {
+              updates[s.sessionId] = {
+                pid: status.pid,
+                url: status.url ?? `http://localhost:${status.port}`,
+              };
+            }
+          } catch {
+            // Ignore — server may not be running
+          }
+        })
+      );
+      if (!cancelled) {
+        setRunningServers(prev => ({ ...prev, ...updates }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessions]);
 
   // Handle session click to select and navigate
   const handleSessionClick = useCallback(async (session: SessionInfoResponse) => {
@@ -137,85 +175,67 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
     }
   }, [resumeSession, selectSession, navigate]);
 
-  // Handle play button click - starts dev server and opens in new tab
+  // Handle play button click - starts dev server and waits for PID response
   const handlePlay = useCallback(async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     setPlayingId(sessionId);
 
-    // Open a blank tab immediately (synchronous from user gesture) to avoid popup blocker
-    const newTab = window.open('about:blank', '_blank');
-    
-    const openUrl = (url: string) => {
-      if (newTab && !newTab.closed) {
-        newTab.location.href = url;
-      } else {
-        // Fallback: if the tab was closed or blocked, navigate current page
-        window.open(url, '_blank');
-      }
-    };
-
-    const closeTab = () => {
-      if (newTab && !newTab.closed) {
-        newTab.close();
-      }
-    };
-
     try {
-      // Start dev server — the backend waits for the actual URL from npm output
       const result = await startDevServer(sessionId);
-      
-      if (result.success) {
-        openUrl(result.url);
-      } else if (result.message?.includes('not found') || result.message?.includes('No package.json')) {
-        closeTab();
-        // Path not found — prompt user to provide the correct path
-        const userPath = prompt(
-          `Could not auto-detect the app directory for "${sessionId}".\n\n` +
-          `Please enter the full path to the app folder (must contain package.json):`
-        );
-        if (userPath) {
-          await setSessionAppPath(sessionId, userPath.trim());
-          const retryResult = await startDevServer(sessionId, userPath.trim());
-          if (retryResult.success) {
-            window.open(retryResult.url, '_blank');
-          } else {
-            alert(`Failed to start app: ${retryResult.message}`);
-          }
-        }
+
+      if (result.success && result.pid) {
+        // Server started — track PID so button switches to Stop
+        setRunningServers(prev => ({
+          ...prev,
+          [sessionId]: { pid: result.pid, url: result.url },
+        }));
       } else {
-        closeTab();
-        alert(`Failed to start app: ${result.message}`);
+        // Server failed to start — show the error, nothing else
+        alert(`Failed to start app: ${result.message || 'Unknown error'}`);
       }
     } catch (error) {
-      closeTab();
-      // If the error message indicates path not found, prompt for path
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      if (errorMsg.includes('not found') || errorMsg.includes('No package.json')) {
-        const userPath = prompt(
-          `Could not auto-detect the app directory for "${sessionId}".\n\n` +
-          `Please enter the full path to the app folder (must contain package.json):`
-        );
-        if (userPath) {
-          try {
-            await setSessionAppPath(sessionId, userPath.trim());
-            const retryResult = await startDevServer(sessionId, userPath.trim());
-            if (retryResult.success) {
-              window.open(retryResult.url, '_blank');
-            } else {
-              alert(`Failed to start app: ${retryResult.message}`);
-            }
-          } catch (retryError) {
-            alert(`Error starting app: ${retryError instanceof Error ? retryError.message : 'Unknown error'}`);
-          }
-        }
-      } else {
-        console.error('Error starting dev server:', error);
-        alert(`Error starting app: ${errorMsg}`);
-      }
+      console.error('Error starting dev server:', error);
+      alert(`Error starting app: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setPlayingId(null);
     }
   }, []);
+
+  // Handle stop button click - stops the dev server by PID
+  const handleStop = useCallback(async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    setStoppingId(sessionId);
+
+    try {
+      const server = runningServers[sessionId];
+      if (!server) {
+        // No tracked server — clean up UI
+        setRunningServers(prev => {
+          const next = { ...prev };
+          delete next[sessionId];
+          return next;
+        });
+        return;
+      }
+
+      const result = await stopDevServer(sessionId, server.pid);
+      // Whether stopped or not, clean up UI state
+      setRunningServers(prev => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+
+      if (!result.stopped) {
+        console.warn('Stop returned not stopped:', result.message);
+      }
+    } catch (error) {
+      console.error('Error stopping dev server:', error);
+      alert(`Error stopping app: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setStoppingId(null);
+    }
+  }, [runningServers]);
 
   // Handle refresh button click
   const handleRefresh = useCallback(async () => {
@@ -386,15 +406,27 @@ export function SessionsList({ showCreateButton = true, onCreateClick, compact =
                   <td className="session-date-cell">{formatDate(session.lastActivityAt)}</td>
                   <td className="session-actions-cell">
                     <div className="session-action-buttons">
-                      <button
-                        className="btn btn-sm btn-success"
-                        onClick={(e) => handlePlay(e, session.sessionId)}
-                        disabled={playingId === session.sessionId}
-                        title="Start app and open in new tab"
-                        aria-label="Play app in new tab"
-                      >
-                        {playingId === session.sessionId ? '⏳ Starting...' : '▶️ Play'}
-                      </button>
+                      {runningServers[session.sessionId] ? (
+                        <button
+                          className="btn btn-sm btn-warning"
+                          onClick={(e) => handleStop(e, session.sessionId)}
+                          disabled={stoppingId === session.sessionId}
+                          title="Stop the running app"
+                          aria-label="Stop app"
+                        >
+                          {stoppingId === session.sessionId ? '⏳ Stopping...' : '⏹️ Stop'}
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-success"
+                          onClick={(e) => handlePlay(e, session.sessionId)}
+                          disabled={playingId === session.sessionId}
+                          title="Start app and open in browser"
+                          aria-label="Play app"
+                        >
+                          {playingId === session.sessionId ? '⏳ Starting...' : '▶️ Play'}
+                        </button>
+                      )}
                       {isCreatorOrAdmin && (
                         <button
                           className="btn btn-sm btn-secondary"

@@ -363,14 +363,11 @@ public class SessionsController : ControllerBase
         [FromQuery] string? appPath,
         CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Starting dev server for session {SessionId}", sessionId);
+        _logger.LogDebug("Starting dev server for session {SessionId}, appPath={AppPath}", sessionId, appPath);
         var response = await _sessionService.StartDevServerAsync(sessionId, appPath, cancellationToken);
         
-        if (!response.Success)
-        {
-            return Problem(response.Message, statusCode: StatusCodes.Status500InternalServerError);
-        }
-
+        // Always return 200 with the structured response so the frontend can inspect
+        // success/message and take action (e.g. prompt for the correct app path).
         return Ok(response);
     }
 
@@ -378,17 +375,18 @@ public class SessionsController : ControllerBase
     /// Stops the development server for a session's app.
     /// </summary>
     /// <param name="sessionId">The session ID.</param>
+    /// <param name="request">The stop request containing the PID to kill.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     [HttpPost("{sessionId}/dev-server/stop")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult> StopDevServer(
+    [ProducesResponseType(typeof(DevServerStopResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DevServerStopResponse>> StopDevServer(
         string sessionId,
+        [FromBody] DevServerStopRequest request,
         CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Stopping dev server for session {SessionId}", sessionId);
-        await _sessionService.StopDevServerAsync(sessionId, cancellationToken);
-        return NoContent();
+        _logger.LogDebug("Stopping dev server for session {SessionId} with PID {Pid}", sessionId, request.Pid);
+        var response = await _sessionService.StopDevServerAsync(sessionId, request.Pid, cancellationToken);
+        return Ok(response);
     }
 
     /// <summary>
