@@ -50,6 +50,7 @@ export function CreateSessionModal({
   const [tools, setTools] = useState<ToolDefinition[]>([]);
   const [provider, setProvider] = useState<ProviderConfig | undefined>(undefined);
   const [appPath, setAppPath] = useState('');
+  const [repoName, setRepoName] = useState('');
   
   // Agent team state
   const agentTeam = useAgentTeam();
@@ -68,6 +69,7 @@ export function CreateSessionModal({
     setTools([]);
     setProvider(undefined);
     setAppPath('');
+    setRepoName('');
     agentTeam.clearSelection();
     setActiveTab('basic');
     setError(null);
@@ -131,6 +133,9 @@ export function CreateSessionModal({
       if (appPath.trim()) {
         request.appPath = appPath.trim();
       }
+      if (repoName.trim()) {
+        request.repoName = repoName.trim();
+      }
 
       // Include team configuration if agents are selected
       if (agentTeam.selectedAgentIds.length > 0) {
@@ -149,7 +154,7 @@ export function CreateSessionModal({
     } finally {
       setIsSubmitting(false);
     }
-  }, [model, streaming, sessionId, systemMessage, tools, provider, appPath, agentTeam, createSession, resetForm, onSessionCreated, isValidSessionId]);
+  }, [model, streaming, sessionId, systemMessage, tools, provider, appPath, repoName, agentTeam, createSession, resetForm, onSessionCreated, isValidSessionId]);
 
   // Modal is a true modal - no backdrop click or escape key dismissal
   // Can only be closed via Cancel or X button inside the form
@@ -291,6 +296,25 @@ export function CreateSessionModal({
                   />
                   <span className="form-hint">
                     Path to the app's local git repository for the dev server. If empty, it will be auto-detected.
+                  </span>
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="repo-name" className="form-label">
+                    Repo Name (Optional)
+                  </label>
+                  <input
+                    id="repo-name"
+                    type="text"
+                    className="form-input"
+                    value={repoName}
+                    onChange={(e) => setRepoName(e.target.value)}
+                    placeholder="e.g. my-app"
+                    disabled={isLoading}
+                    data-testid="repo-name-input"
+                  />
+                  <span className="form-hint">
+                    Project folder name for the play button. If empty, it will be derived from the App Path.
                   </span>
                 </div>
               </div>

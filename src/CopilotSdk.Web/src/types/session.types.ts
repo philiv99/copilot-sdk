@@ -76,6 +76,8 @@ export interface CreateSessionRequest {
   tools?: ToolDefinition[];
   /** Local path to the app's git repository / project directory. */
   appPath?: string;
+  /** The repository/project folder name (e.g. "my-app"). */
+  repoName?: string;
   /** List of agent IDs to compose into the session's system message. */
   selectedAgents?: string[];
   /** Team preset ID. If set, the team's agents are used. */
@@ -118,6 +120,8 @@ export interface SessionInfoResponse {
   creatorUserId?: string;
   /** Display name of the user who created this session. */
   creatorDisplayName?: string;
+  /** The repository/project folder name for this session. */
+  repoName?: string;
   /** List of selected agent IDs for the session's team. */
   selectedAgents?: string[];
   /** The team preset ID used for the session. */

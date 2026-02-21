@@ -74,6 +74,12 @@ public class CreateSessionRequest : IValidatableObject
     public string? AppPath { get; set; }
 
     /// <summary>
+    /// The repository/project folder name (e.g. "my-app").
+    /// If not provided, it will be derived from AppPath.
+    /// </summary>
+    public string? RepoName { get; set; }
+
+    /// <summary>
     /// List of agent IDs to compose into the session's system message.
     /// </summary>
     public List<string>? SelectedAgents { get; set; }

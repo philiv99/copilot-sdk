@@ -199,6 +199,8 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
             MigrateAddColumn(connection, transaction, "Sessions", "SelectedTeam", "TEXT");
             // Migration: Add WorkflowPattern column to Sessions if it doesn't exist
             MigrateAddColumn(connection, transaction, "Sessions", "WorkflowPattern", "TEXT");
+            // Migration: Add RepoName column to Sessions if it doesn't exist
+            MigrateAddColumn(connection, transaction, "Sessions", "RepoName", "TEXT");
 
             transaction.Commit();
             _logger.LogInformation("SQLite database initialized at {DataDirectory}", _dataDirectory);
@@ -303,8 +305,8 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
             using var sessionCmd = connection.CreateCommand();
             sessionCmd.Transaction = transaction;
             sessionCmd.CommandText = @"
-                INSERT INTO Sessions (SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, AppPath, SelectedAgentsJson, SelectedTeam, WorkflowPattern, UpdatedAt)
-                VALUES (@sessionId, @createdAt, @lastActivityAt, @messageCount, @summary, @isRemote, @configJson, @creatorUserId, @appPath, @selectedAgentsJson, @selectedTeam, @workflowPattern, @updatedAt)
+                INSERT INTO Sessions (SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, AppPath, RepoName, SelectedAgentsJson, SelectedTeam, WorkflowPattern, UpdatedAt)
+                VALUES (@sessionId, @createdAt, @lastActivityAt, @messageCount, @summary, @isRemote, @configJson, @creatorUserId, @appPath, @repoName, @selectedAgentsJson, @selectedTeam, @workflowPattern, @updatedAt)
                 ON CONFLICT(SessionId) DO UPDATE SET
                     LastActivityAt = @lastActivityAt,
                     MessageCount = @messageCount,
@@ -313,6 +315,7 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
                     ConfigJson = @configJson,
                     CreatorUserId = COALESCE(@creatorUserId, CreatorUserId),
                     AppPath = COALESCE(@appPath, AppPath),
+                    RepoName = COALESCE(@repoName, RepoName),
                     SelectedAgentsJson = COALESCE(@selectedAgentsJson, SelectedAgentsJson),
                     SelectedTeam = COALESCE(@selectedTeam, SelectedTeam),
                     WorkflowPattern = COALESCE(@workflowPattern, WorkflowPattern),
@@ -327,6 +330,7 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
             sessionCmd.Parameters.AddWithValue("@configJson", sessionData.Config != null ? JsonSerializer.Serialize(sessionData.Config, JsonOptions) : (object)DBNull.Value);
             sessionCmd.Parameters.AddWithValue("@creatorUserId", (object?)sessionData.CreatorUserId ?? DBNull.Value);
             sessionCmd.Parameters.AddWithValue("@appPath", (object?)sessionData.AppPath ?? DBNull.Value);
+            sessionCmd.Parameters.AddWithValue("@repoName", (object?)sessionData.RepoName ?? DBNull.Value);
             sessionCmd.Parameters.AddWithValue("@selectedAgentsJson", (object?)sessionData.SelectedAgentsJson ?? DBNull.Value);
             sessionCmd.Parameters.AddWithValue("@selectedTeam", (object?)sessionData.SelectedTeam ?? DBNull.Value);
             sessionCmd.Parameters.AddWithValue("@workflowPattern", (object?)sessionData.WorkflowPattern ?? DBNull.Value);
@@ -367,7 +371,7 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
 
             // Load session metadata
             using var sessionCmd = connection.CreateCommand();
-            sessionCmd.CommandText = "SELECT SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, AppPath, SelectedAgentsJson, SelectedTeam, WorkflowPattern FROM Sessions WHERE SessionId = @sessionId;";
+            sessionCmd.CommandText = "SELECT SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, AppPath, RepoName, SelectedAgentsJson, SelectedTeam, WorkflowPattern FROM Sessions WHERE SessionId = @sessionId;";
             sessionCmd.Parameters.AddWithValue("@sessionId", sessionId);
 
             PersistedSessionData? sessionData = null;
@@ -407,7 +411,7 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
         {
             using var connection = CreateConnection();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, AppPath, SelectedAgentsJson, SelectedTeam, WorkflowPattern FROM Sessions ORDER BY CreatedAt DESC;";
+            cmd.CommandText = "SELECT SessionId, CreatedAt, LastActivityAt, MessageCount, Summary, IsRemote, ConfigJson, CreatorUserId, AppPath, RepoName, SelectedAgentsJson, SelectedTeam, WorkflowPattern FROM Sessions ORDER BY CreatedAt DESC;";
 
             using var reader = await Task.Run(() => cmd.ExecuteReader(), cancellationToken);
             while (await Task.Run(() => reader.Read(), cancellationToken))
@@ -703,6 +707,14 @@ public class SqlitePersistenceService : IPersistenceService, IAsyncDisposable
         {
             var appPathOrdinal = reader.GetOrdinal("AppPath");
             sessionData.AppPath = reader.IsDBNull(appPathOrdinal) ? null : reader.GetString(appPathOrdinal);
+        }
+        catch (Exception) { /* column doesn't exist yet */ }
+
+        // RepoName may not exist in older databases
+        try
+        {
+            var repoNameOrdinal = reader.GetOrdinal("RepoName");
+            sessionData.RepoName = reader.IsDBNull(repoNameOrdinal) ? null : reader.GetString(repoNameOrdinal);
         }
         catch (Exception) { /* column doesn't exist yet */ }
 

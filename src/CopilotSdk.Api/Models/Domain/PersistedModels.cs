@@ -53,6 +53,11 @@ public class PersistedSessionData
     public string? AppPath { get; set; }
 
     /// <summary>
+    /// The repository/project folder name (e.g. "my-app"). Derived from AppPath if not set.
+    /// </summary>
+    public string? RepoName { get; set; }
+
+    /// <summary>
     /// All messages in the session conversation.
     /// </summary>
     public List<PersistedMessage> Messages { get; set; } = new();

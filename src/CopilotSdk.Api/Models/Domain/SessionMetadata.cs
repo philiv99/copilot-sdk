@@ -51,6 +51,11 @@ public class SessionMetadata
     public string? AppPath { get; set; }
 
     /// <summary>
+    /// The repository/project folder name (e.g. "my-app"). Derived from AppPath if not set.
+    /// </summary>
+    public string? RepoName { get; set; }
+
+    /// <summary>
     /// Port where the dev server is running (if started).
     /// </summary>
     public int? DevServerPort { get; set; }

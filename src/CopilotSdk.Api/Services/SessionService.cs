@@ -78,8 +78,16 @@ public class SessionService : ISessionService
         // Register the session in the SessionManager (persists to disk)
         await _sessionManager.RegisterSessionAsync(session.SessionId, session, config, creatorUserId, cancellationToken);
 
-        // Store additional metadata (app path, team configuration) if provided
+        // Derive RepoName from AppPath if not explicitly provided
+        var repoName = request.RepoName;
+        if (string.IsNullOrWhiteSpace(repoName) && !string.IsNullOrWhiteSpace(request.AppPath))
+        {
+            repoName = Path.GetFileName(request.AppPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        }
+
+        // Store additional metadata (app path, repo name, team configuration) if provided
         var needsUpdate = !string.IsNullOrWhiteSpace(request.AppPath)
+            || !string.IsNullOrWhiteSpace(repoName)
             || HasTeamConfiguration(request);
 
         if (needsUpdate)
@@ -89,6 +97,9 @@ public class SessionService : ISessionService
             {
                 if (!string.IsNullOrWhiteSpace(request.AppPath))
                     metadata2.AppPath = request.AppPath;
+
+                if (!string.IsNullOrWhiteSpace(repoName))
+                    metadata2.RepoName = repoName;
 
                 if (HasTeamConfiguration(request))
                 {
@@ -114,6 +125,8 @@ public class SessionService : ISessionService
             MessageCount = 0,
             Summary = metadata?.Summary,
             CreatorUserId = creatorUserId,
+            CreatorDisplayName = await GetCreatorDisplayNameAsync(creatorUserId, cancellationToken),
+            RepoName = metadata?.RepoName,
             SelectedAgents = metadata?.SelectedAgents,
             SelectedTeam = metadata?.SelectedTeam,
             WorkflowPattern = metadata?.WorkflowPattern
@@ -157,6 +170,7 @@ public class SessionService : ISessionService
             Summary = metadata?.Summary,
             CreatorUserId = metadata?.CreatorUserId,
             CreatorDisplayName = await GetCreatorDisplayNameAsync(metadata?.CreatorUserId, cancellationToken),
+            RepoName = metadata?.RepoName,
             SelectedAgents = metadata?.SelectedAgents,
             SelectedTeam = metadata?.SelectedTeam,
             WorkflowPattern = metadata?.WorkflowPattern
@@ -223,6 +237,7 @@ public class SessionService : ISessionService
             Summary = meta.Summary,
             CreatorUserId = meta.CreatorUserId,
             CreatorDisplayName = meta.CreatorUserId != null && creatorNames.TryGetValue(meta.CreatorUserId, out var name) ? name : null,
+            RepoName = meta.RepoName,
             SelectedAgents = meta.SelectedAgents,
             SelectedTeam = meta.SelectedTeam,
             WorkflowPattern = meta.WorkflowPattern
@@ -280,6 +295,7 @@ public class SessionService : ISessionService
             Summary = metadata.Summary,
             CreatorUserId = metadata.CreatorUserId,
             CreatorDisplayName = await GetCreatorDisplayNameAsync(metadata.CreatorUserId, cancellationToken),
+            RepoName = metadata.RepoName,
             SelectedAgents = metadata.SelectedAgents,
             SelectedTeam = metadata.SelectedTeam,
             WorkflowPattern = metadata.WorkflowPattern

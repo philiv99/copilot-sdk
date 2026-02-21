@@ -56,6 +56,11 @@ public class SessionInfoResponse
     public string? CreatorDisplayName { get; set; }
 
     /// <summary>
+    /// The repository/project folder name for this session.
+    /// </summary>
+    public string? RepoName { get; set; }
+
+    /// <summary>
     /// List of selected agent IDs for the session's team configuration.
     /// </summary>
     public List<string>? SelectedAgents { get; set; }

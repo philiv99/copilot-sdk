@@ -52,3 +52,10 @@
 .streaming-label {
   font-weight: 500;
 }
+
+.streaming-elapsed {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  font-size: 0.8rem;
+  margin-left: 0.25rem;
+}
