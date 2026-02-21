@@ -1,0 +1,9 @@
+{
+  "id": "data-ingestor",
+  "name": "Data Ingestor",
+  "role": "data",
+  "description": "Specializes in data ingestion pipelines, ETL processes, file parsing, and data transformation",
+  "icon": "📥",
+  "tags": ["data", "etl", "ingestion", "parsing"],
+  "category": "specialist"
+}

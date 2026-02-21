@@ -1,0 +1,9 @@
+{
+  "id": "qa-agent",
+  "name": "QA / Final Approval",
+  "role": "qa",
+  "description": "Final quality gate — validates that the complete feature meets all requirements and is ready for delivery",
+  "icon": "✅",
+  "tags": ["qa", "approval", "acceptance"],
+  "category": "traditional"
+}

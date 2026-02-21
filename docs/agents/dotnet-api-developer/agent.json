@@ -1,0 +1,9 @@
+{
+  "id": "dotnet-api-developer",
+  "name": ".NET WebAPI Developer",
+  "role": "backend",
+  "description": "Specializes in .NET Web API development, REST endpoints, middleware, and service architecture",
+  "icon": "🔷",
+  "tags": ["dotnet", "backend", "api", "csharp"],
+  "category": "specialist"
+}

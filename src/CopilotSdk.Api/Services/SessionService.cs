@@ -6,6 +6,7 @@ using CopilotSdk.Api.Models.Responses;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.AI;
 using DomainSessionConfig = CopilotSdk.Api.Models.Domain.SessionConfig;
+using DomainSystemMessageConfig = CopilotSdk.Api.Models.Domain.SystemMessageConfig;
 
 namespace CopilotSdk.Api.Services;
 
@@ -19,6 +20,7 @@ public class SessionService : ISessionService
     private readonly IToolExecutionService _toolExecutionService;
     private readonly IDevServerService _devServerService;
     private readonly IPersistenceService _persistenceService;
+    private readonly IAgentTeamService _agentTeamService;
     private readonly ILogger<SessionService> _logger;
 
     public SessionService(
@@ -27,6 +29,7 @@ public class SessionService : ISessionService
         IToolExecutionService toolExecutionService,
         IDevServerService devServerService,
         IPersistenceService persistenceService,
+        IAgentTeamService agentTeamService,
         ILogger<SessionService> logger)
     {
         _clientManager = clientManager;
@@ -34,6 +37,7 @@ public class SessionService : ISessionService
         _toolExecutionService = toolExecutionService;
         _devServerService = devServerService;
         _persistenceService = persistenceService;
+        _agentTeamService = agentTeamService;
         _logger = logger;
     }
 
@@ -42,12 +46,19 @@ public class SessionService : ISessionService
     {
         _logger.LogInformation("Creating session with model {Model} for user {UserId}", request.Model, creatorUserId ?? "anonymous");
 
+        // If team/agents are specified, compose a team system message
+        var systemMessage = request.SystemMessage;
+        if (HasTeamConfiguration(request))
+        {
+            systemMessage = await ComposeTeamSystemMessage(request, systemMessage, cancellationToken);
+        }
+
         var config = new DomainSessionConfig
         {
             SessionId = request.SessionId,
             Model = request.Model,
             Streaming = request.Streaming,
-            SystemMessage = request.SystemMessage,
+            SystemMessage = systemMessage,
             AvailableTools = request.AvailableTools,
             ExcludedTools = request.ExcludedTools,
             Provider = request.Provider,
@@ -67,13 +78,25 @@ public class SessionService : ISessionService
         // Register the session in the SessionManager (persists to disk)
         await _sessionManager.RegisterSessionAsync(session.SessionId, session, config, creatorUserId, cancellationToken);
 
-        // Store the app path if provided
-        if (!string.IsNullOrWhiteSpace(request.AppPath))
+        // Store additional metadata (app path, team configuration) if provided
+        var needsUpdate = !string.IsNullOrWhiteSpace(request.AppPath)
+            || HasTeamConfiguration(request);
+
+        if (needsUpdate)
         {
             var metadata2 = await _sessionManager.GetMetadataAsync(session.SessionId, cancellationToken);
             if (metadata2 != null)
             {
-                metadata2.AppPath = request.AppPath;
+                if (!string.IsNullOrWhiteSpace(request.AppPath))
+                    metadata2.AppPath = request.AppPath;
+
+                if (HasTeamConfiguration(request))
+                {
+                    metadata2.SelectedAgents = request.SelectedAgents;
+                    metadata2.SelectedTeam = request.SelectedTeam;
+                    metadata2.WorkflowPattern = request.WorkflowPattern;
+                }
+
                 await _sessionManager.PersistSessionAsync(session.SessionId, metadata2, cancellationToken);
             }
         }
@@ -90,7 +113,10 @@ public class SessionService : ISessionService
             Status = "Active",
             MessageCount = 0,
             Summary = metadata?.Summary,
-            CreatorUserId = creatorUserId
+            CreatorUserId = creatorUserId,
+            SelectedAgents = metadata?.SelectedAgents,
+            SelectedTeam = metadata?.SelectedTeam,
+            WorkflowPattern = metadata?.WorkflowPattern
         };
     }
 
@@ -130,7 +156,10 @@ public class SessionService : ISessionService
             MessageCount = metadata?.MessageCount ?? 0,
             Summary = metadata?.Summary,
             CreatorUserId = metadata?.CreatorUserId,
-            CreatorDisplayName = await GetCreatorDisplayNameAsync(metadata?.CreatorUserId, cancellationToken)
+            CreatorDisplayName = await GetCreatorDisplayNameAsync(metadata?.CreatorUserId, cancellationToken),
+            SelectedAgents = metadata?.SelectedAgents,
+            SelectedTeam = metadata?.SelectedTeam,
+            WorkflowPattern = metadata?.WorkflowPattern
         };
     }
 
@@ -193,7 +222,10 @@ public class SessionService : ISessionService
             MessageCount = meta.MessageCount,
             Summary = meta.Summary,
             CreatorUserId = meta.CreatorUserId,
-            CreatorDisplayName = meta.CreatorUserId != null && creatorNames.TryGetValue(meta.CreatorUserId, out var name) ? name : null
+            CreatorDisplayName = meta.CreatorUserId != null && creatorNames.TryGetValue(meta.CreatorUserId, out var name) ? name : null,
+            SelectedAgents = meta.SelectedAgents,
+            SelectedTeam = meta.SelectedTeam,
+            WorkflowPattern = meta.WorkflowPattern
         }).ToList();
 
         return new SessionListResponse
@@ -247,7 +279,10 @@ public class SessionService : ISessionService
             MessageCount = metadata.MessageCount,
             Summary = metadata.Summary,
             CreatorUserId = metadata.CreatorUserId,
-            CreatorDisplayName = await GetCreatorDisplayNameAsync(metadata.CreatorUserId, cancellationToken)
+            CreatorDisplayName = await GetCreatorDisplayNameAsync(metadata.CreatorUserId, cancellationToken),
+            SelectedAgents = metadata.SelectedAgents,
+            SelectedTeam = metadata.SelectedTeam,
+            WorkflowPattern = metadata.WorkflowPattern
         };
     }
 
@@ -968,5 +1003,68 @@ public class SessionService : ISessionService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Checks whether the request includes team/agent configuration.
+    /// </summary>
+    private static bool HasTeamConfiguration(CreateSessionRequest request)
+    {
+        return (request.SelectedAgents != null && request.SelectedAgents.Count > 0)
+            || !string.IsNullOrWhiteSpace(request.SelectedTeam);
+    }
+
+    /// <summary>
+    /// Composes a team system message from the request's agent/team selections,
+    /// merging with any existing system message configuration.
+    /// </summary>
+    private async Task<DomainSystemMessageConfig?> ComposeTeamSystemMessage(
+        CreateSessionRequest request,
+        DomainSystemMessageConfig? existingSystemMessage,
+        CancellationToken cancellationToken)
+    {
+        // Resolve agent IDs: explicit selection takes priority over team preset
+        var agentIds = request.SelectedAgents ?? new List<string>();
+
+        if (agentIds.Count == 0 && !string.IsNullOrWhiteSpace(request.SelectedTeam))
+        {
+            var teamDetail = await _agentTeamService.GetTeamDetailAsync(request.SelectedTeam, cancellationToken);
+            if (teamDetail != null)
+            {
+                agentIds = teamDetail.Team.Agents;
+                // Use team's workflow pattern if none explicitly set
+                if (string.IsNullOrWhiteSpace(request.WorkflowPattern))
+                {
+                    request.WorkflowPattern = teamDetail.Team.WorkflowPattern;
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Selected team '{TeamId}' not found, ignoring", request.SelectedTeam);
+            }
+        }
+
+        if (agentIds.Count == 0)
+        {
+            return existingSystemMessage;
+        }
+
+        var composeRequest = new ComposeTeamMessageRequest
+        {
+            AgentIds = agentIds,
+            WorkflowPattern = request.WorkflowPattern ?? "sequential",
+            CustomContent = existingSystemMessage?.Content
+        };
+
+        var result = await _agentTeamService.ComposeTeamSystemMessageAsync(composeRequest, cancellationToken);
+
+        _logger.LogInformation("Composed team system message: {AgentCount} agents, pattern: {Pattern}",
+            result.AgentCount, result.WorkflowPattern);
+
+        return new DomainSystemMessageConfig
+        {
+            Mode = "replace",
+            Content = result.ComposedContent
+        };
     }
 }

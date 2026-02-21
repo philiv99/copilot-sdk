@@ -1,0 +1,9 @@
+{
+  "id": "systems-analyst",
+  "name": "Systems Analyst",
+  "role": "analyst",
+  "description": "Analyzes requirements, designs system architecture, defines data models and API contracts",
+  "icon": "📐",
+  "tags": ["architecture", "requirements", "design"],
+  "category": "traditional"
+}

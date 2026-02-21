@@ -56,6 +56,21 @@ public class PersistedSessionData
     /// All messages in the session conversation.
     /// </summary>
     public List<PersistedMessage> Messages { get; set; } = new();
+
+    /// <summary>
+    /// JSON-serialized list of selected agent IDs for the session's team configuration.
+    /// </summary>
+    public string? SelectedAgentsJson { get; set; }
+
+    /// <summary>
+    /// The team preset ID used for the session (if any).
+    /// </summary>
+    public string? SelectedTeam { get; set; }
+
+    /// <summary>
+    /// The workflow pattern used for the team: "sequential", "parallel", or "hub-spoke".
+    /// </summary>
+    public string? WorkflowPattern { get; set; }
 }
 
 /// <summary>

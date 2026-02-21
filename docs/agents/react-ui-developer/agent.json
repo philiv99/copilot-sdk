@@ -1,0 +1,9 @@
+{
+  "id": "react-ui-developer",
+  "name": "React UI Developer",
+  "role": "frontend",
+  "description": "Specializes in React.js component development, hooks, state management, and responsive UI",
+  "icon": "⚛️",
+  "tags": ["react", "frontend", "ui", "components"],
+  "category": "specialist"
+}

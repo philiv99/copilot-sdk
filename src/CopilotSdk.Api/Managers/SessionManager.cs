@@ -426,6 +426,16 @@ public class SessionManager
 
     private static Models.Domain.SessionMetadata ConvertToMetadata(PersistedSessionData sessionData)
     {
+        List<string>? selectedAgents = null;
+        if (!string.IsNullOrEmpty(sessionData.SelectedAgentsJson))
+        {
+            try
+            {
+                selectedAgents = System.Text.Json.JsonSerializer.Deserialize<List<string>>(sessionData.SelectedAgentsJson);
+            }
+            catch { /* ignore deserialization errors */ }
+        }
+
         return new Models.Domain.SessionMetadata
         {
             SessionId = sessionData.SessionId,
@@ -436,6 +446,9 @@ public class SessionManager
             IsRemote = sessionData.IsRemote,
             CreatorUserId = sessionData.CreatorUserId,
             AppPath = sessionData.AppPath,
+            SelectedAgents = selectedAgents,
+            SelectedTeam = sessionData.SelectedTeam,
+            WorkflowPattern = sessionData.WorkflowPattern,
             Config = sessionData.Config != null ? ConvertToSessionConfig(sessionData.Config) : null
         };
     }
@@ -490,6 +503,9 @@ public class SessionManager
             IsRemote = metadata.IsRemote,
             CreatorUserId = metadata.CreatorUserId,
             AppPath = metadata.AppPath,
+            SelectedAgentsJson = metadata.SelectedAgents != null ? System.Text.Json.JsonSerializer.Serialize(metadata.SelectedAgents) : null,
+            SelectedTeam = metadata.SelectedTeam,
+            WorkflowPattern = metadata.WorkflowPattern,
             Config = metadata.Config != null ? ConvertToPersistedConfig(metadata.Config) : null,
             Messages = new List<PersistedMessage>()
         };

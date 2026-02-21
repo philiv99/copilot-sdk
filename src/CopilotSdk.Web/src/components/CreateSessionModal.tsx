@@ -7,6 +7,8 @@ import { ModelSelector, AVAILABLE_MODELS } from './ModelSelector';
 import { SystemMessageEditor } from './SystemMessageEditor';
 import { ToolDefinitionEditor } from './ToolDefinitionEditor';
 import { ProviderConfigEditor } from './ProviderConfigEditor';
+import { TeamConfigTab } from './TeamConfigTab';
+import { useAgentTeam } from '../hooks/useAgentTeam';
 import './CreateSessionModal.css';
 
 /**
@@ -28,7 +30,7 @@ export interface CreateSessionModalProps {
 /**
  * Tab type for modal sections.
  */
-type TabType = 'basic' | 'system' | 'tools' | 'provider';
+type TabType = 'basic' | 'team' | 'system' | 'tools' | 'provider';
 
 /**
  * Create session modal component.
@@ -49,6 +51,9 @@ export function CreateSessionModal({
   const [provider, setProvider] = useState<ProviderConfig | undefined>(undefined);
   const [appPath, setAppPath] = useState('');
   
+  // Agent team state
+  const agentTeam = useAgentTeam();
+
   // UI state
   const [activeTab, setActiveTab] = useState<TabType>('basic');
   const [error, setError] = useState<string | null>(null);
@@ -63,9 +68,10 @@ export function CreateSessionModal({
     setTools([]);
     setProvider(undefined);
     setAppPath('');
+    agentTeam.clearSelection();
     setActiveTab('basic');
     setError(null);
-  }, []);
+  }, [agentTeam]);
 
   // Handle close
   const handleClose = useCallback(() => {
@@ -126,6 +132,15 @@ export function CreateSessionModal({
         request.appPath = appPath.trim();
       }
 
+      // Include team configuration if agents are selected
+      if (agentTeam.selectedAgentIds.length > 0) {
+        request.selectedAgents = agentTeam.selectedAgentIds;
+        request.workflowPattern = agentTeam.workflowPattern;
+      }
+      if (agentTeam.selectedTeamId) {
+        request.selectedTeam = agentTeam.selectedTeamId;
+      }
+
       const result = await createSession(request);
       resetForm();
       onSessionCreated(result.sessionId);
@@ -134,7 +149,7 @@ export function CreateSessionModal({
     } finally {
       setIsSubmitting(false);
     }
-  }, [model, streaming, sessionId, systemMessage, tools, provider, appPath, createSession, resetForm, onSessionCreated, isValidSessionId]);
+  }, [model, streaming, sessionId, systemMessage, tools, provider, appPath, agentTeam, createSession, resetForm, onSessionCreated, isValidSessionId]);
 
   // Modal is a true modal - no backdrop click or escape key dismissal
   // Can only be closed via Cancel or X button inside the form
@@ -168,6 +183,13 @@ export function CreateSessionModal({
             type="button"
           >
             Basic
+          </button>
+          <button
+            className={`modal-tab ${activeTab === 'team' ? 'active' : ''}`}
+            onClick={() => setActiveTab('team')}
+            type="button"
+          >
+            Team {agentTeam.selectedAgentIds.length > 0 && <span className="tab-badge">{agentTeam.selectedAgentIds.length}</span>}
           </button>
           <button
             className={`modal-tab ${activeTab === 'system' ? 'active' : ''}`}
@@ -283,6 +305,24 @@ export function CreateSessionModal({
                   disabled={isLoading}
                 />
               </div>
+            )}
+
+            {/* Team Configuration Tab */}
+            {activeTab === 'team' && (
+              <TeamConfigTab
+                agents={agentTeam.agents}
+                teams={agentTeam.teams}
+                selectedTeamId={agentTeam.selectedTeamId}
+                selectedAgentIds={agentTeam.selectedAgentIds}
+                workflowPattern={agentTeam.workflowPattern}
+                disabled={isLoading}
+                loading={agentTeam.loading}
+                error={agentTeam.error}
+                onSelectTeam={agentTeam.selectTeam}
+                onToggleAgent={agentTeam.toggleAgent}
+                onWorkflowPatternChange={agentTeam.setWorkflowPattern}
+                onClearSelection={agentTeam.clearSelection}
+              />
             )}
 
             {/* Tools Tab */}

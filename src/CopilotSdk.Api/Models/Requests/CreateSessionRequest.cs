@@ -72,4 +72,19 @@ public class CreateSessionRequest : IValidatableObject
     /// Used by the dev server to locate and serve the app.
     /// </summary>
     public string? AppPath { get; set; }
+
+    /// <summary>
+    /// List of agent IDs to compose into the session's system message.
+    /// </summary>
+    public List<string>? SelectedAgents { get; set; }
+
+    /// <summary>
+    /// Team preset ID. If set, the team's agents are used (overridden by SelectedAgents if both provided).
+    /// </summary>
+    public string? SelectedTeam { get; set; }
+
+    /// <summary>
+    /// Workflow pattern for the team: "sequential", "parallel", or "hub-spoke".
+    /// </summary>
+    public string? WorkflowPattern { get; set; }
 }

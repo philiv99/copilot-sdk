@@ -1,0 +1,9 @@
+{
+  "id": "full-dev-team",
+  "name": "Full Development Team",
+  "description": "Complete SDLC team with all traditional roles for end-to-end feature delivery",
+  "icon": "👥",
+  "agents": ["orchestrator", "systems-analyst", "coder", "code-reviewer", "code-tester", "security-reviewer", "qa-agent"],
+  "workflowPattern": "sequential",
+  "workflowDescription": "Analyst → Coder → Reviewer → Tester → Security → QA"
+}

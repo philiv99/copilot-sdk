@@ -1,0 +1,9 @@
+{
+  "id": "frontend-squad",
+  "name": "Frontend Squad",
+  "description": "React UI specialists with code quality and testing support",
+  "icon": "⚛️",
+  "agents": ["orchestrator", "react-ui-developer", "coder", "code-reviewer", "code-tester"],
+  "workflowPattern": "hub-spoke",
+  "workflowDescription": "Orchestrator coordinates React Dev + Coder → Reviewer → Tester"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "mapbox-developer",
+  "name": "Mapbox Map Developer",
+  "role": "mapping",
+  "description": "Specializes in Mapbox GL JS integration, geospatial data, map layers, and spatial interactions",
+  "icon": "🗺️",
+  "tags": ["mapbox", "geospatial", "maps", "gis"],
+  "category": "specialist"
+}

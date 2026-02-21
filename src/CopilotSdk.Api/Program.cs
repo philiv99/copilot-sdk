@@ -80,6 +80,7 @@ builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IPromptRefinementService, PromptRefinementService>();
 builder.Services.AddScoped<IModelsService, ModelsService>();
 builder.Services.AddScoped<ISystemPromptTemplateService, SystemPromptTemplateService>();
+builder.Services.AddScoped<IAgentTeamService, AgentTeamService>();
 builder.Services.AddScoped<IUserService, UserService>();
 
 // Register hosted service for automatic client startup/shutdown

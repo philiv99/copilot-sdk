@@ -1,0 +1,19 @@
+{
+  "category": "agents",
+  "displayName": "Development Agents",
+  "description": "Configurable agent roles for multi-agent development team workflows",
+  "agents": [
+    "orchestrator",
+    "systems-analyst",
+    "coder",
+    "code-reviewer",
+    "code-tester",
+    "security-reviewer",
+    "qa-agent",
+    "react-ui-developer",
+    "dotnet-api-developer",
+    "mapbox-developer",
+    "data-ingestor",
+    "mysql-persistence-expert"
+  ]
+}

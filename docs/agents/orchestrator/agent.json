@@ -1,0 +1,9 @@
+{
+  "id": "orchestrator",
+  "name": "Project Manager / Orchestrator",
+  "role": "orchestrator",
+  "description": "Coordinates work across team members, breaks down tasks, manages workflow and dependencies",
+  "icon": "🎯",
+  "tags": ["management", "planning", "coordination"],
+  "category": "traditional"
+}

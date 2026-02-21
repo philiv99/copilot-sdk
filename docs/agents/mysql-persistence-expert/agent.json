@@ -1,0 +1,9 @@
+{
+  "id": "mysql-persistence-expert",
+  "name": "MySQL Persistence Expert",
+  "role": "database",
+  "description": "Specializes in MySQL database design, query optimization, schema migrations, and data access patterns",
+  "icon": "🐬",
+  "tags": ["mysql", "database", "sql", "persistence"],
+  "category": "specialist"
+}

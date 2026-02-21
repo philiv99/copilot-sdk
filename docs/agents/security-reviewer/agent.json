@@ -1,0 +1,9 @@
+{
+  "id": "security-reviewer",
+  "name": "Security Reviewer",
+  "role": "security",
+  "description": "Reviews code for security vulnerabilities, injection attacks, data exposure, and auth issues",
+  "icon": "🛡️",
+  "tags": ["security", "vulnerabilities", "compliance"],
+  "category": "traditional"
+}

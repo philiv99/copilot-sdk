@@ -1,0 +1,9 @@
+{
+  "id": "code-reviewer",
+  "name": "Code Reviewer",
+  "role": "reviewer",
+  "description": "Reviews code for quality, correctness, maintainability, and adherence to standards",
+  "icon": "🔍",
+  "tags": ["review", "quality", "standards"],
+  "category": "traditional"
+}

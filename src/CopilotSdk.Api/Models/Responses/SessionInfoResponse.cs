@@ -54,4 +54,19 @@ public class SessionInfoResponse
     /// The display name of the creator who owns this session.
     /// </summary>
     public string? CreatorDisplayName { get; set; }
+
+    /// <summary>
+    /// List of selected agent IDs for the session's team configuration.
+    /// </summary>
+    public List<string>? SelectedAgents { get; set; }
+
+    /// <summary>
+    /// The team preset ID used for the session (if any).
+    /// </summary>
+    public string? SelectedTeam { get; set; }
+
+    /// <summary>
+    /// The workflow pattern used for the team.
+    /// </summary>
+    public string? WorkflowPattern { get; set; }
 }

@@ -1,0 +1,9 @@
+{
+  "id": "data-pipeline",
+  "name": "Data Pipeline Team",
+  "description": "Data ingestion and MySQL persistence specialists for ETL workflows",
+  "icon": "📥",
+  "agents": ["orchestrator", "data-ingestor", "mysql-persistence-expert", "coder", "code-tester"],
+  "workflowPattern": "sequential",
+  "workflowDescription": "Analyst (Ingestor) → Coder → DB Expert → Tester"
+}

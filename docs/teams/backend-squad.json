@@ -1,0 +1,9 @@
+{
+  "id": "backend-squad",
+  "name": "Backend Squad",
+  "description": ".NET API and MySQL persistence specialists with full review pipeline",
+  "icon": "🔷",
+  "agents": ["orchestrator", "dotnet-api-developer", "mysql-persistence-expert", "coder", "code-reviewer", "code-tester"],
+  "workflowPattern": "hub-spoke",
+  "workflowDescription": "Orchestrator coordinates API Dev + DB Expert + Coder → Reviewer → Tester"
+}

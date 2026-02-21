@@ -1,0 +1,9 @@
+{
+  "id": "coder",
+  "name": "Software Developer",
+  "role": "coder",
+  "description": "Implements features, writes clean production code following established patterns and best practices",
+  "icon": "💻",
+  "tags": ["implementation", "coding", "development"],
+  "category": "traditional"
+}

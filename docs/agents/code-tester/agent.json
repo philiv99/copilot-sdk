@@ -1,0 +1,9 @@
+{
+  "id": "code-tester",
+  "name": "Test Engineer",
+  "role": "tester",
+  "description": "Writes unit tests, integration tests, and validates correctness of implementations",
+  "icon": "🧪",
+  "tags": ["testing", "quality", "validation"],
+  "category": "traditional"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "mapping-team",
+  "name": "Mapping & GIS Team",
+  "description": "Mapbox and React specialists for geospatial application development",
+  "icon": "🗺️",
+  "agents": ["orchestrator", "mapbox-developer", "react-ui-developer", "coder", "code-reviewer", "code-tester"],
+  "workflowPattern": "hub-spoke",
+  "workflowDescription": "Orchestrator coordinates Mapbox Dev + React Dev + Coder → Reviewer → Tester"
+}

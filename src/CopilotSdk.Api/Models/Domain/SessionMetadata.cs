@@ -59,4 +59,19 @@ public class SessionMetadata
     /// Whether the dev server is currently running.
     /// </summary>
     public bool IsDevServerRunning { get; set; }
+
+    /// <summary>
+    /// List of selected agent IDs for the session's team configuration.
+    /// </summary>
+    public List<string>? SelectedAgents { get; set; }
+
+    /// <summary>
+    /// The team preset ID used for the session (if any).
+    /// </summary>
+    public string? SelectedTeam { get; set; }
+
+    /// <summary>
+    /// The workflow pattern used for the team: "sequential", "parallel", or "hub-spoke".
+    /// </summary>
+    public string? WorkflowPattern { get; set; }
 }

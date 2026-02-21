@@ -22,6 +22,12 @@ import {
   ModelsResponse,
   SystemPromptTemplatesResponse,
   SystemPromptTemplateContentResponse,
+  AgentListResponse,
+  AgentDetailResponse,
+  TeamListResponse,
+  TeamDetailResponse,
+  ComposeTeamMessageRequest,
+  ComposeTeamMessageResponse,
 } from '../types';
 
 /**
@@ -445,6 +451,73 @@ export async function stopDevServer(sessionId: string, pid: number): Promise<Dev
 export async function getDevServerStatus(sessionId: string): Promise<DevServerStatusResponse> {
   try {
     const response = await apiClient.get<DevServerStatusResponse>(`/sessions/${sessionId}/dev-server/status`);
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+// #endregion
+
+// #region Agent & Team Management
+
+/**
+ * Get all available agent definitions.
+ */
+export async function getAgents(): Promise<AgentListResponse> {
+  try {
+    const response = await apiClient.get<AgentListResponse>('/agents');
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+/**
+ * Get a specific agent's details including prompt content.
+ * @param agentId The agent ID.
+ */
+export async function getAgentDetail(agentId: string): Promise<AgentDetailResponse> {
+  try {
+    const response = await apiClient.get<AgentDetailResponse>(`/agents/${agentId}`);
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+/**
+ * Get all available team preset definitions.
+ */
+export async function getTeams(): Promise<TeamListResponse> {
+  try {
+    const response = await apiClient.get<TeamListResponse>('/teams');
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+/**
+ * Get a specific team's details with resolved agent definitions.
+ * @param teamId The team ID.
+ */
+export async function getTeamDetail(teamId: string): Promise<TeamDetailResponse> {
+  try {
+    const response = await apiClient.get<TeamDetailResponse>(`/teams/${teamId}`);
+    return response.data;
+  } catch (error) {
+    throw new Error(extractErrorMessage(error));
+  }
+}
+
+/**
+ * Compose a system message from agent and team selections.
+ * @param request The composition request.
+ */
+export async function composeTeamMessage(request: ComposeTeamMessageRequest): Promise<ComposeTeamMessageResponse> {
+  try {
+    const response = await apiClient.post<ComposeTeamMessageResponse>('/teams/compose', request);
     return response.data;
   } catch (error) {
     throw new Error(extractErrorMessage(error));
