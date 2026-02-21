@@ -1,92 +1,175 @@
 # Copilot SDK Demo Application
 
-A full-stack proof of concept application demonstrating the [GitHub Copilot SDK (.NET)](https://github.com/github/github-copilot-sdk). This application provides a web-based interface for interacting with GitHub Copilot programmatically.
+A full-stack web application demonstrating the [GitHub Copilot SDK (.NET)](https://github.com/github/github-copilot-sdk). Provides a rich UI for managing Copilot connections, creating AI chat sessions, streaming responses in real time, executing custom tools, and more.
 
-## Purpose
+**Stack:** .NET 9 Web API &bull; React 19 &bull; SignalR &bull; SQLite
 
-This demo showcases how to integrate the GitHub Copilot SDK into a web application, enabling developers to:
+---
 
-- **Manage Copilot connections** — Start, stop, and monitor Copilot client lifecycle
-- **Create chat sessions** — Configure sessions with custom models, system prompts, and tool definitions
-- **Send and receive messages** — Real-time streaming responses with progressive text rendering
-- **Execute custom tools** — Register and run custom tool functions that Copilot can invoke
-- **Attach files** — Provide file context with messages
-- **Use your own API keys** — BYOK (Bring Your Own Key) support for custom providers
-- **Refine system prompts** — AI-powered prompt refinement to improve and expand system message content
+## Quick Start
 
-## How It Works
+**Prerequisites:** .NET 9.0 SDK &bull; Node.js 18+ &bull; GitHub Copilot CLI
 
-The application consists of a .NET Web API backend that wraps the Copilot SDK, and a React frontend for user interaction.
+```bash
+# Clone and run everything
+git clone https://github.com/philiv99/copilot-sdk.git
+cd copilot-sdk/tools
+.\start-app.bat          # Windows — starts backend (port 5139) + frontend (port 3000)
+```
 
-1. **Connect** — The backend establishes a connection to GitHub Copilot via the CLI
-2. **Create Session** — Users configure a session with their preferred model and settings
-3. **Chat** — Messages are sent through the API; responses stream back in real-time via SignalR
-4. **Tools** — When Copilot invokes a registered tool, the backend executes it and returns results
+Or start individually:
 
-All SDK features are exposed through REST endpoints and real-time SignalR events, making it easy to understand how each capability works.
+```bash
+# Backend
+cd src/CopilotSdk.Api && dotnet run
+
+# Frontend
+cd src/CopilotSdk.Web && npm install && npm start
+```
+
+Default admin login: `admin` / `admin123`
+
+---
 
 ## Features
 
-### System Message Refinement
+### User Accounts & Roles
 
-The application includes an AI-powered prompt refinement feature that helps users improve their system message content. When creating a new session, users can click the "Refine" button next to the system message content textarea to:
+- **Register / Login / Logout** with local accounts
+- Three roles: **Admin**, **Creator**, **Player**
+  - Admins manage all users and see all sessions
+  - Creators create and manage their own sessions
+  - Players can view and play sessions with dev servers
+- **Profile page** — update display name, change password, pick an avatar (12 preset emojis or custom upload)
+- **Admin panel** — list, activate/deactivate, and reset passwords for users
 
-- **Expand** brief instructions into comprehensive requirements
-- **Clarify** ambiguous requirements
-- **Add** specific technical constraints and considerations
-- **Structure** content logically with clear sections
+### Copilot Client Management
 
-**Keyboard Shortcut:** Press `Ctrl+Shift+R` to trigger refinement.
+- **Start / Stop / Force-Stop** the Copilot SDK connection from the UI
+- **Ping** with latency display
+- **Live connection status** indicator (auto-refreshes every 5 seconds)
+- Configure: CLI path, port, stdio mode, log level, auto-start, auto-restart, working directory, environment variables
+- **Auto-start on launch** via background hosted service
 
-**API Endpoint:** `POST /api/copilot/refine-prompt`
+### Session Management
 
-```json
-// Request
-{
-  "content": "Build a task management app",
-  "context": "Web application for small teams",
-  "refinementFocus": "detail"
-}
+- **Create sessions** with a 4-tab modal:
+  - **Basic** — session ID, model, streaming toggle
+  - **System Message** — append/replace mode, free-text editor, template selector, agent team composer
+  - **Tools** — available/excluded tool filters, custom tool definitions (name, description, typed parameters)
+  - **Provider** — BYOK (Bring Your Own Key) configuration for custom API endpoints
+- **List / Resume / Delete** sessions — role-filtered (admins see all, creators see their own)
+- Tab-based session navigation — each open session gets its own chat tab
 
-// Response
-{
-  "refinedContent": "You are an AI assistant helping to build...",
-  "originalContent": "Build a task management app",
-  "iterationCount": 1,
-  "success": true,
-  "errorMessage": null
-}
-```
+### Chat & Streaming
 
-**Refinement Focus Options:**
-- `clarity` — Make requirements crystal clear and unambiguous
-- `detail` — Add comprehensive details and specific examples
-- `constraints` — Define technical constraints, boundaries, and limitations
-- `all` — Focus on all aspects equally
+- **Send messages** with enqueue or immediate mode
+- **Real-time streaming** — progressive text rendering via SignalR with a streaming cursor
+- **File attachments** — attach files to messages for context
+- **Abort** an in-progress response
+- **Persisted chat history** — messages survive session resume
+- **Reasoning display** — collapsible reasoning blocks for thinking models (o1, o3, etc.)
+- **Tool execution cards** — inline display of tool calls and results
+- **Code formatting** in assistant messages
 
-**Meta-Prompt Template:**
+### AI Agent Teams
 
-The refinement service uses the following template to instruct the LLM:
+- **12 built-in agents** — orchestrator, systems-analyst, coder, code-reviewer, code-tester, security-reviewer, QA, react-ui-developer, dotnet-api-developer, mapbox-developer, data-ingestor, mysql-persistence-expert
+- **5 team presets** — full-dev-team, backend-squad, frontend-squad, data-pipeline, mapping-team
+- **Compose system messages** from selected agents — choose a team preset or pick individual agents, add a workflow pattern (sequential/parallel/hub-spoke), and optionally layer a prompt template + custom content
 
-```
-You are a prompt engineering expert. Your task is to improve and expand the following 
-system message content that will be used to instruct an AI assistant for building an application.
+### Prompt Refinement
 
-ORIGINAL CONTENT:
+- **AI-powered** refinement of system message content — click "Refine" or press `Ctrl+Shift+R`
+- Focus options: clarity, detail, constraints, or all
+- Undo with `Ctrl+Shift+Z`, iteration counter, character-count diff
+- Rate-limited (10 requests / 60 seconds)
+
+### System Prompt Templates
+
+- **5 built-in templates**: app-dev, app-dev-with-AI, game-dev, game-dev-with-AI, pipeline-dev
+- Select a template when creating a session to pre-populate the system message
+
+### Model Selection
+
+- **19 models** available out of the box — GPT-4o, GPT-4.1, Claude Sonnet/Opus, Gemini, o1, o3-mini, and more
+- Dropdown selector with model descriptions
+
+### Custom Tools
+
+- Define custom tools at session creation (name, description, parameters with types)
+- Built-in demo tools: `echo_tool`, `get_current_time`
+- Tool execution shown inline in chat with start/complete events
+
+### Dev Server Management
+
+- **Start / Stop** a Vite dev server for session-built applications
+- View server status (PID, port, URL)
+- Auto-opens browser on start
+
+### Event Log
+
+- **Real-time event log panel** — see every SignalR event as it arrives
+- Filter by event type, search, clear, expand JSON details
+
+### UI & UX
+
+- **Dark theme** throughout
+- **Tab-based layout** — pinned Sessions tab + per-session chat tabs
+- **Responsive design** — mobile sidebar toggle, hamburger menu, breakpoints at 768px / 480px
+- **Toast notifications** — info / success / warning / error with auto-dismiss
+- **Loading states** — spinners, skeleton loaders, overlays
+- **Error boundary** with retry
+- **Accessibility** — ARIA labels, roles, live regions, focus management
+
 ---
-{user_content}
+
+## Project Structure
+
+```
+src/
+  CopilotSdk.Api/        .NET 9 Web API (port 5139)
+  CopilotSdk.Web/        React 19 SPA (port 3000)
+  data/                  SQLite database + legacy JSON
+docs/
+  agents/                Agent definitions (JSON + Markdown prompts)
+  system_prompts/        System prompt templates
+  teams/                 Team preset definitions
+tests/
+  CopilotSdk.Api.Tests/  xUnit backend tests
+  (frontend tests)       Jest + React Testing Library (in CopilotSdk.Web)
+tools/
+  start-app.bat          Launch both backend and frontend
+```
+
 ---
 
-Please refine this content by:
-1. Clarifying any ambiguous requirements
-2. Adding specific, actionable instructions
-3. Including relevant technical constraints or considerations
-4. Structuring the content logically with clear sections
-5. Adding helpful context about expected behaviors
-6. Ensuring the tone is appropriate for an AI system prompt
+## Testing
 
-Respond ONLY with the improved system message content.
+```bash
+# Backend (~398 tests)
+cd tests/CopilotSdk.Api.Tests && dotnet test
+
+# Frontend (~593 tests)
+cd src/CopilotSdk.Web && npm test -- --watchAll=false
 ```
+
+---
+
+## API Overview
+
+| Area | Endpoints | Description |
+|------|-----------|-------------|
+| Client | 7 | Status, config, start/stop, ping |
+| Sessions | 12 | CRUD, resume, messages, history, abort, dev-server |
+| Models | 2 | List models, refresh cache |
+| Users | 16 | Register, login, profile, admin management, avatars |
+| Agents & Teams | 5 | List agents/teams, compose system messages |
+| Prompt Refinement | 1 | AI-powered prompt improvement |
+| System Prompt Templates | 2 | List and retrieve templates |
+| **SignalR Hub** | `/hubs/session` | Real-time streaming events |
+
+---
 
 ## License
 
