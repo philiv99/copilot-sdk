@@ -1,7 +1,7 @@
 /**
  * Card component for displaying tool execution status and results.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ToolExecutionStartData, ToolExecutionCompleteData } from '../../types';
 import './ToolExecutionCard.css';
 
@@ -27,6 +27,28 @@ const formatArguments = (args: unknown): string => {
   } catch {
     return String(args);
   }
+};
+
+const summarizeArguments = (args: unknown): string | null => {
+  if (!args || typeof args !== 'object') {
+    return null;
+  }
+
+  const values = args as Record<string, unknown>;
+  const candidates = [
+    values.description,
+    values.command,
+    values.path,
+    values.filePath,
+    values.cwd,
+  ];
+
+  const summary = candidates.find((value) => typeof value === 'string' && value.trim().length > 0);
+  if (typeof summary !== 'string') {
+    return null;
+  }
+
+  return summary.length > 220 ? `${summary.slice(0, 217)}...` : summary;
 };
 
 /**
@@ -66,9 +88,16 @@ export function ToolExecutionCard({
   const toolName = startData?.toolName || completeData?.toolName || 'Unknown Tool';
   const displayName = startData?.displayName || toolName;
   const args = startData?.arguments;
+  const argumentSummary = summarizeArguments(args);
 
   const hasError = !!completeData?.error;
   const statusIcon = getStatusIcon(isExecuting, hasError);
+
+  useEffect(() => {
+    if (isExecuting || hasError) {
+      setIsExpanded(true);
+    }
+  }, [isExecuting, hasError]);
 
   return (
     <div
@@ -85,6 +114,7 @@ export function ToolExecutionCard({
         <span className="tool-icon">{statusIcon}</span>
         <span className="tool-name">{displayName}</span>
         {isExecuting && <span className="tool-status">Running...</span>}
+        {argumentSummary && <span className="tool-status">{argumentSummary}</span>}
         {completeData?.duration && (
           <span className="tool-duration">{completeData.duration}ms</span>
         )}

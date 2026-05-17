@@ -72,6 +72,8 @@ export interface SessionEvent {
   parentId?: string;
   /** Whether this event is ephemeral (not persisted). */
   ephemeral?: boolean;
+  /** Agent id for events relayed from a delegated child session. */
+  agentId?: string;
   /** Event-specific data payload. */
   data?: SessionEventData;
 }
@@ -92,6 +94,7 @@ export type SessionEventType =
   | 'tool.execution_complete'
   | 'session.start'
   | 'session.idle'
+  | 'session.progress'
   | 'session.error'
   | 'abort';
 
@@ -111,6 +114,7 @@ export type SessionEventData =
   | ToolExecutionCompleteData
   | SessionStartData
   | SessionIdleData
+  | SessionProgressData
   | SessionErrorData
   | AbortData;
 
@@ -274,6 +278,32 @@ export interface SessionIdleData {
 }
 
 /**
+ * API-generated progress update for long-running session work.
+ */
+export interface SessionProgressData {
+  /** User-visible progress message. */
+  message: string;
+  /** Machine-readable phase such as queued, thinking, tool, heartbeat, done. */
+  phase: string;
+  /** Whether the session is still actively working. */
+  isActive: boolean;
+  /** Agent id associated with this progress event, when delegated. */
+  agentId?: string;
+  /** Backend-generated id for one delegated task execution. */
+  executionId?: string;
+  /** Current task step or tool action. */
+  step?: string;
+  /** One-based step index when known. */
+  stepIndex?: number;
+  /** Total number of steps when known. */
+  stepCount?: number;
+  /** Tool name associated with this progress event. */
+  toolName?: string;
+  /** Tool call id associated with this progress event. */
+  toolCallId?: string;
+}
+
+/**
  * Data for assistant.turn_start events.
  */
 export interface AssistantTurnStartData {
@@ -335,4 +365,6 @@ export interface StreamingDelta {
   content: string;
   /** Total response size in bytes so far. */
   totalBytes?: number;
+  /** Agent id for deltas relayed from a delegated child session. */
+  agentId?: string;
 }

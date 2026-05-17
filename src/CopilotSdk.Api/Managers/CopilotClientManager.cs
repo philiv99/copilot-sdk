@@ -3,6 +3,7 @@ using CopilotSdk.Api.Models.Domain;
 using CopilotSdk.Api.Services;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using SdkConnectionState = GitHub.Copilot.SDK.ConnectionState;
 using SdkSessionConfig = GitHub.Copilot.SDK.SessionConfig;
 using SdkResumeSessionConfig = GitHub.Copilot.SDK.ResumeSessionConfig;
@@ -21,16 +22,21 @@ public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
 {
     private readonly ILogger<CopilotClientManager> _logger;
     private readonly IPersistenceService? _persistenceService;
+    private readonly PermissionPolicyOptions? _permissionPolicy;
     private readonly object _lock = new();
     private CopilotClient? _client;
     private CopilotClientConfig _config = new();
     private DateTime? _connectedAt;
     private string? _lastError;
 
-    public CopilotClientManager(ILogger<CopilotClientManager> logger, IPersistenceService? persistenceService = null)
+    public CopilotClientManager(
+        ILogger<CopilotClientManager> logger,
+        IPersistenceService? persistenceService = null,
+        IOptions<PermissionPolicyOptions>? permissionPolicy = null)
     {
         _logger = logger;
         _persistenceService = persistenceService;
+        _permissionPolicy = permissionPolicy?.Value;
     }
 
     /// <summary>
@@ -319,7 +325,7 @@ public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
         return new CopilotClientOptions
         {
             CliPath = _config.CliPath,
-            CliArgs = _config.CliArgs,
+            CliArgs = BuildEffectiveCliArgs(_config.CliArgs),
             CliUrl = _config.CliUrl,
             Port = _config.Port,
             UseStdio = _config.UseStdio,
@@ -327,8 +333,68 @@ public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
             AutoStart = _config.AutoStart,
             AutoRestart = _config.AutoRestart,
             Cwd = _config.Cwd,
-            Environment = _config.Environment
+            Environment = _config.Environment,
+            Logger = _logger
         };
+    }
+
+    /// <summary>
+    /// Combines user-supplied CLI args with permission flags derived from
+    /// <see cref="PermissionPolicyOptions"/>. Without these flags the CLI tries
+    /// to display interactive approval prompts in stdio/server mode and hangs
+    /// forever because there is no terminal attached.
+    /// </summary>
+    private string[]? BuildEffectiveCliArgs(string[]? userArgs)
+    {
+        var args = new List<string>(userArgs ?? Array.Empty<string>());
+
+        if (_permissionPolicy != null &&
+            string.Equals(_permissionPolicy.Mode, "AutoApproveLocalExecutor", StringComparison.OrdinalIgnoreCase))
+        {
+            // Required for non-interactive mode (per `copilot help permissions`).
+            // Our PermissionPolicyService still applies deny-pattern + path checks
+            // for any requests the CLI delegates over the RPC permission protocol.
+            if (!HasFlag(args, "--allow-all-tools") && !HasFlag(args, "--allow-all") && !HasFlag(args, "--yolo"))
+            {
+                args.Add("--allow-all-tools");
+            }
+
+            // Allow file access within the configured root. By default the CLI
+            // restricts paths to its CWD, which would block legitimate operations
+            // outside the API process working directory.
+            if (!string.IsNullOrWhiteSpace(_permissionPolicy.AllowedRoot)
+                && !HasFlag(args, "--allow-all-paths")
+                && !HasAddDirFor(args, _permissionPolicy.AllowedRoot))
+            {
+                args.Add("--add-dir");
+                args.Add(_permissionPolicy.AllowedRoot);
+            }
+        }
+
+        return args.Count == 0 ? null : args.ToArray();
+    }
+
+    private static bool HasFlag(List<string> args, string flag)
+        => args.Any(a => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase)
+            || a.StartsWith(flag + "=", StringComparison.OrdinalIgnoreCase));
+
+    private static bool HasAddDirFor(List<string> args, string dir)
+    {
+        for (int i = 0; i < args.Count; i++)
+        {
+            if (string.Equals(args[i], "--add-dir", StringComparison.OrdinalIgnoreCase)
+                && i + 1 < args.Count
+                && string.Equals(args[i + 1], dir, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            if (args[i].StartsWith("--add-dir=", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(args[i].Substring("--add-dir=".Length), dir, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     #region Session Management
@@ -380,6 +446,7 @@ public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
         bool streaming = false,
         Models.Domain.ProviderConfig? provider = null,
         ICollection<AIFunction>? tools = null,
+        PermissionHandler? onPermissionRequest = null,
         CancellationToken cancellationToken = default)
     {
         CopilotClient? client;
@@ -398,7 +465,8 @@ public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
         {
             Streaming = streaming,
             Tools = tools,
-            Provider = provider != null ? BuildSdkProviderConfig(provider) : null
+            Provider = provider != null ? BuildSdkProviderConfig(provider) : null,
+            OnPermissionRequest = onPermissionRequest
         };
 
         _logger.LogInformation("Resuming session {SessionId}", sessionId);
@@ -431,6 +499,24 @@ public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
         return await client.ListSessionsAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public async Task<List<GitHub.Copilot.SDK.ModelInfo>> ListModelsAsync(CancellationToken cancellationToken = default)
+    {
+        CopilotClient? client;
+
+        lock (_lock)
+        {
+            client = _client;
+        }
+
+        if (client == null || client.State != SdkConnectionState.Connected)
+        {
+            throw new InvalidOperationException("Client is not connected. Start the client first.");
+        }
+
+        return await client.ListModelsAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Deletes a session by ID.
     /// </summary>
@@ -457,6 +543,34 @@ public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
 
     private SdkSessionConfig BuildSdkSessionConfig(Models.Domain.SessionConfig config, ICollection<AIFunction>? tools)
     {
+        if (tools != null && tools.Count > 0)
+        {
+            var toolNames = string.Join(", ", tools.Select(t => t.Name));
+            _logger.LogInformation(
+                "Building SDK session config for {SessionId} with {ToolCount} client AIFunctions: [{ToolNames}]; AvailableTools={Available}; ExcludedTools={Excluded}",
+                config.SessionId ?? "(auto)",
+                tools.Count,
+                toolNames,
+                config.AvailableTools == null ? "<all>" : string.Join(",", config.AvailableTools),
+                config.ExcludedTools == null ? "<none>" : string.Join(",", config.ExcludedTools));
+
+            foreach (var t in tools)
+            {
+                _logger.LogDebug(
+                    "Tool '{ToolName}' published schema: {Schema}",
+                    t.Name,
+                    t.JsonSchema.GetRawText());
+            }
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Building SDK session config for {SessionId} with NO client AIFunctions (AvailableTools={Available}, ExcludedTools={Excluded})",
+                config.SessionId ?? "(auto)",
+                config.AvailableTools == null ? "<all>" : string.Join(",", config.AvailableTools),
+                config.ExcludedTools == null ? "<none>" : string.Join(",", config.ExcludedTools));
+        }
+
         return new SdkSessionConfig
         {
             SessionId = config.SessionId,
@@ -466,7 +580,8 @@ public class CopilotClientManager : ICopilotClientManager, IAsyncDisposable
             SystemMessage = config.SystemMessage != null ? BuildSdkSystemMessageConfig(config.SystemMessage) : null,
             AvailableTools = config.AvailableTools,
             ExcludedTools = config.ExcludedTools,
-            Provider = config.Provider != null ? BuildSdkProviderConfig(config.Provider) : null
+            Provider = config.Provider != null ? BuildSdkProviderConfig(config.Provider) : null,
+            OnPermissionRequest = config.OnPermissionRequest
         };
     }
 

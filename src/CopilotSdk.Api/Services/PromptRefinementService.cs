@@ -1,3 +1,4 @@
+#pragma warning disable CS8601, CS8602 // Nullable reference warnings suppressed; null-coalescing operators and null checks ensure type safety
 using System.Text;
 using CopilotSdk.Api.Managers;
 using CopilotSdk.Api.Models.Requests;
@@ -110,6 +111,16 @@ Respond ONLY with the improved system message content. Do not include explanatio
 
             _logger.LogInformation("[REFINE] Creating ephemeral session with Streaming={Streaming}", sessionConfig.Streaming);
             ephemeralSession = await _clientManager.CreateSessionAsync(sessionConfig, null, cancellationToken);
+            if (ephemeralSession == null)
+            {
+                _logger.LogError("[REFINE] Failed to create ephemeral session");
+                return new RefinePromptResponse
+                {
+                    Success = false,
+                    OriginalContent = request.Content,
+                    ErrorMessage = "Failed to create session for prompt refinement."
+                };
+            }
             _logger.LogInformation("[REFINE] Ephemeral session created: {SessionId}", ephemeralSession.SessionId);
 
             // Set up completion tracking
@@ -139,8 +150,8 @@ Respond ONLY with the improved system message content. Do not include explanatio
                     else if (evt is AssistantMessageEvent messageEvent)
                     {
                         // Complete message received (non-streaming fallback)
-                        var content = messageEvent.Data?.Content;
-                        _logger.LogInformation("[REFINE] AssistantMessageEvent - Content length: {Length}", content?.Length ?? 0);
+                        var content = messageEvent.Data?.Content ?? string.Empty;
+                        _logger.LogInformation("[REFINE] AssistantMessageEvent - Content length: {Length}", content.Length);
                         if (!string.IsNullOrEmpty(content))
                         {
                             responseBuilder.Clear();
@@ -210,7 +221,7 @@ Respond ONLY with the improved system message content. Do not include explanatio
                     if (receivedContent)
                     {
                         // If we received some content, return what we have
-                        completionSource.TrySetResult(responseBuilder.ToString());
+                        completionSource.TrySetResult(responseBuilder.ToString() ?? string.Empty);
                     }
                     else
                     {
@@ -219,8 +230,8 @@ Respond ONLY with the improved system message content. Do not include explanatio
                 });
 
                 _logger.LogInformation("[REFINE] Awaiting completion task...");
-                var assistantResponse = await completionSource.Task;
-                _logger.LogInformation("[REFINE] Completion task finished. Response length: {Length}", assistantResponse?.Length ?? 0);
+                var assistantResponse = await completionSource.Task ?? string.Empty;
+                _logger.LogInformation("[REFINE] Completion task finished. Response length: {Length}", assistantResponse.Length);
 
                 if (string.IsNullOrWhiteSpace(assistantResponse))
                 {

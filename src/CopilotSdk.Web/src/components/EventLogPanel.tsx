@@ -38,6 +38,7 @@ const EVENT_TYPE_FILTERS: { value: SessionEventType | 'all'; label: string; colo
   { value: 'assistant.usage', label: 'Usage', color: '#8b5cf6' },
   { value: 'session.start', label: 'Session Start', color: '#14b8a6' },
   { value: 'session.idle', label: 'Session Idle', color: '#94a3b8' },
+  { value: 'session.progress', label: 'Progress', color: '#38bdf8' },
   { value: 'session.error', label: 'Errors', color: '#ef4444' },
   { value: 'abort', label: 'Abort', color: '#fb923c' },
 ];
@@ -79,6 +80,8 @@ function getEventTypeIcon(type: SessionEventType): string {
       return '🚀';
     case 'session.idle':
       return '💤';
+    case 'session.progress':
+      return '▶';
     case 'session.error':
       return '❌';
     case 'abort':
@@ -135,6 +138,10 @@ function formatEventData(event: SessionEvent): string {
         return `Prompt: ${(data as any).promptTokens || 0}, Completion: ${(data as any).completionTokens || 0}`;
       case 'session.error':
         return (data as any).error || (data as any).message || '';
+      case 'session.progress': {
+        const agent = (data as any).agentId ? `[${(data as any).agentId}] ` : '';
+        return `${agent}${(data as any).message || ''}`;
+      }
       default:
         return JSON.stringify(data).substring(0, 100);
     }
@@ -168,6 +175,7 @@ function EventLogEntry({ event }: { event: SessionEvent }) {
         <span className="event-type" style={{ color }}>
           {event.type}
         </span>
+        {event.agentId && <span className="event-agent">{event.agentId}</span>}
         {event.ephemeral && <span className="event-ephemeral" title="Ephemeral event">⚡</span>}
         <span className="event-expand-indicator">{expanded ? '▼' : '▶'}</span>
       </div>

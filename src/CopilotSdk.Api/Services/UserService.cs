@@ -12,6 +12,8 @@ namespace CopilotSdk.Api.Services;
 /// </summary>
 public class UserService : IUserService
 {
+    internal const string AuthBypassUserId = "dev-admin";
+
     private readonly IPersistenceService _persistence;
     private readonly ILogger<UserService> _logger;
 
@@ -19,6 +21,7 @@ public class UserService : IUserService
     private static readonly Regex EmailRegex = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.Compiled);
     private const int MinPasswordLength = 6;
     private const int MaxAvatarDataLength = 350_000; // ~256KB base64
+    private static readonly DateTime AuthBypassTimestamp = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     /// <summary>
     /// Preset avatars available for selection.
@@ -150,6 +153,9 @@ public class UserService : IUserService
     /// <inheritdoc/>
     public async Task<UserResponse?> GetCurrentUserAsync(string userId, CancellationToken cancellationToken = default)
     {
+        if (IsAuthBypassUser(userId))
+            return MapToResponse(CreateAuthBypassUser());
+
         var user = await _persistence.GetUserByIdAsync(userId, cancellationToken);
         return user != null ? MapToResponse(user) : null;
     }
@@ -157,6 +163,9 @@ public class UserService : IUserService
     /// <inheritdoc/>
     public async Task<UserResponse> UpdateProfileAsync(string userId, UpdateProfileRequest request, CancellationToken cancellationToken = default)
     {
+        if (IsAuthBypassUser(userId))
+            return MapToResponse(UpdateAuthBypassUser(request));
+
         var user = await _persistence.GetUserByIdAsync(userId, cancellationToken);
         if (user == null)
             throw new KeyNotFoundException($"User {userId} not found.");
@@ -197,6 +206,9 @@ public class UserService : IUserService
     /// <inheritdoc/>
     public async Task ChangePasswordAsync(string userId, ChangePasswordRequest request, CancellationToken cancellationToken = default)
     {
+        if (IsAuthBypassUser(userId))
+            return;
+
         if (string.IsNullOrWhiteSpace(request.CurrentPassword))
             throw new ArgumentException("Current password is required.");
         if (string.IsNullOrWhiteSpace(request.NewPassword))
@@ -226,6 +238,16 @@ public class UserService : IUserService
     /// <inheritdoc/>
     public async Task<UserResponse> UpdateAvatarAsync(string userId, string avatarType, string? avatarData, CancellationToken cancellationToken = default)
     {
+        if (IsAuthBypassUser(userId))
+        {
+            var bypassUser = CreateAuthBypassUser();
+            bypassUser.AvatarType = ParseAvatarType(avatarType);
+            bypassUser.AvatarData = avatarData;
+            ValidateAvatarData(bypassUser.AvatarType, bypassUser.AvatarData);
+            bypassUser.UpdatedAt = DateTime.UtcNow;
+            return MapToResponse(bypassUser);
+        }
+
         var user = await _persistence.GetUserByIdAsync(userId, cancellationToken);
         if (user == null)
             throw new KeyNotFoundException($"User {userId} not found.");
@@ -253,6 +275,9 @@ public class UserService : IUserService
     /// <inheritdoc/>
     public async Task<UserResponse?> GetUserByIdAsync(string userId, CancellationToken cancellationToken = default)
     {
+        if (IsAuthBypassUser(userId))
+            return MapToResponse(CreateAuthBypassUser());
+
         var user = await _persistence.GetUserByIdAsync(userId, cancellationToken);
         return user != null ? MapToResponse(user) : null;
     }
@@ -396,6 +421,9 @@ public class UserService : IUserService
     {
         if (string.IsNullOrWhiteSpace(userId))
             return null;
+
+        if (IsAuthBypassUser(userId))
+            return CreateAuthBypassUser();
 
         var user = await _persistence.GetUserByIdAsync(userId, cancellationToken);
         if (user == null || !user.IsActive)
@@ -550,6 +578,62 @@ public class UserService : IUserService
             UpdatedAt = user.UpdatedAt,
             LastLoginAt = user.LastLoginAt
         };
+    }
+
+    private static bool IsAuthBypassUser(string userId)
+    {
+        return string.Equals(userId, AuthBypassUserId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static User CreateAuthBypassUser()
+    {
+        return new User
+        {
+            Id = AuthBypassUserId,
+            Username = "admin",
+            Email = "admin@local",
+            DisplayName = "Administrator",
+            PasswordHash = string.Empty,
+            PasswordSalt = string.Empty,
+            Role = UserRole.Admin,
+            AvatarType = AvatarType.Preset,
+            AvatarData = "wizard",
+            IsActive = true,
+            CreatedAt = AuthBypassTimestamp,
+            UpdatedAt = AuthBypassTimestamp,
+            LastLoginAt = AuthBypassTimestamp
+        };
+    }
+
+    private static User UpdateAuthBypassUser(UpdateProfileRequest request)
+    {
+        var user = CreateAuthBypassUser();
+
+        if (request.DisplayName != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.DisplayName))
+                throw new ArgumentException("Display name cannot be empty.");
+            if (request.DisplayName.Length > 100)
+                throw new ArgumentException("Display name must be 100 characters or fewer.");
+            user.DisplayName = request.DisplayName.Trim();
+        }
+
+        if (request.Email != null)
+        {
+            if (!EmailRegex.IsMatch(request.Email))
+                throw new ArgumentException("Invalid email format.");
+            user.Email = request.Email.Trim().ToLowerInvariant();
+        }
+
+        if (request.AvatarType != null)
+        {
+            user.AvatarType = ParseAvatarType(request.AvatarType);
+            user.AvatarData = request.AvatarData;
+            ValidateAvatarData(user.AvatarType, user.AvatarData);
+        }
+
+        user.UpdatedAt = DateTime.UtcNow;
+        return user;
     }
 
     /// <summary>

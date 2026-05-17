@@ -30,6 +30,8 @@ builder.Services.AddCors(options =>
 // Bind CopilotClient configuration from appsettings
 builder.Services.Configure<CopilotClientConfig>(
     builder.Configuration.GetSection("CopilotClient"));
+builder.Services.Configure<PermissionPolicyOptions>(
+    builder.Configuration.GetSection("Permissions"));
 
 // Register persistence service (must be registered before managers that depend on it)
 // Uses SQLite for atomic writes, queryable data, and proper concurrency handling
@@ -40,7 +42,8 @@ builder.Services.AddSingleton<CopilotClientManager>(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<CopilotClientManager>>();
     var persistenceService = sp.GetRequiredService<IPersistenceService>();
-    var manager = new CopilotClientManager(logger, persistenceService);
+    var permissionPolicy = sp.GetService<Microsoft.Extensions.Options.IOptions<PermissionPolicyOptions>>();
+    var manager = new CopilotClientManager(logger, persistenceService, permissionPolicy);
     
     // Apply configuration from appsettings (will be overridden by persisted config if available)
     var config = builder.Configuration.GetSection("CopilotClient").Get<CopilotClientConfig>();
@@ -75,12 +78,14 @@ builder.Services.AddMemoryCache();
 
 builder.Services.AddSingleton<IToolExecutionService, ToolExecutionService>();
 builder.Services.AddSingleton<IDevServerService, DevServerService>();
+builder.Services.AddSingleton<IPermissionPolicyService, PermissionPolicyService>();
 builder.Services.AddScoped<ICopilotClientService, CopilotClientService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IPromptRefinementService, PromptRefinementService>();
 builder.Services.AddScoped<IModelsService, ModelsService>();
 builder.Services.AddScoped<ISystemPromptTemplateService, SystemPromptTemplateService>();
-builder.Services.AddScoped<IAgentTeamService, AgentTeamService>();
+builder.Services.AddSingleton<IAgentTeamService, AgentTeamService>();
+builder.Services.AddSingleton<IAgentOrchestrationService, AgentOrchestrationService>();
 builder.Services.AddScoped<IUserService, UserService>();
 
 // Register hosted service for automatic client startup/shutdown

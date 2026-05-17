@@ -6,6 +6,10 @@ using CopilotSdk.Api.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Moq;
+using SdkModelInfo = GitHub.Copilot.SDK.ModelInfo;
+using SdkModelCapabilities = GitHub.Copilot.SDK.ModelCapabilities;
+using SdkModelLimits = GitHub.Copilot.SDK.ModelLimits;
+using SdkModelSupports = GitHub.Copilot.SDK.ModelSupports;
 
 namespace CopilotSdk.Api.Tests;
 
@@ -90,9 +94,9 @@ public class ModelsServiceTests : IDisposable
         // Act
         var result = await _service.GetModelsAsync();
 
-        // Assert - hardcoded fallback contains gpt-4o, claude-sonnet-4, gemini-2.5-pro
-        Assert.Contains(result.Models, m => m.Value == "gpt-4o");
+        // Assert - hardcoded fallback contains claude-sonnet-4, gpt-5-mini, gemini-2.5-pro
         Assert.Contains(result.Models, m => m.Value == "claude-sonnet-4");
+        Assert.Contains(result.Models, m => m.Value == "gpt-5-mini");
         Assert.Contains(result.Models, m => m.Value == "gemini-2.5-pro");
     }
 
@@ -216,6 +220,69 @@ public class ModelsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetModelsAsync_UsesSdkModels_WhenClientConnected()
+    {
+        // Arrange
+        _mockClientManager.Setup(m => m.Status).Returns(new ClientStatus
+        {
+            ConnectionState = "Connected",
+            IsConnected = true
+        });
+        _mockClientManager
+            .Setup(m => m.ListModelsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<SdkModelInfo>
+            {
+                new()
+                {
+                    Id = "sdk-model",
+                    Name = "SDK Model",
+                    Capabilities = new SdkModelCapabilities
+                    {
+                        Supports = new SdkModelSupports { Vision = true },
+                        Limits = new SdkModelLimits { MaxContextWindowTokens = 128000 }
+                    }
+                }
+            });
+
+        // Act
+        var result = await _service.GetModelsAsync();
+
+        // Assert
+        Assert.Single(result.Models);
+        Assert.Equal("sdk-model", result.Models[0].Value);
+        Assert.Equal("SDK Model", result.Models[0].Label);
+        Assert.Contains("128,000", result.Models[0].Description);
+        Assert.Contains("Supports vision", result.Models[0].Description);
+    }
+
+    [Fact]
+    public async Task GetModelsAsync_PrefersFastModelsAndMovesAutoLate()
+    {
+        // Arrange
+        _mockClientManager.Setup(m => m.Status).Returns(new ClientStatus
+        {
+            ConnectionState = "Connected",
+            IsConnected = true
+        });
+        _mockClientManager
+            .Setup(m => m.ListModelsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<SdkModelInfo>
+            {
+                new() { Id = "auto", Name = "Auto" },
+                new() { Id = "claude-opus-4.7", Name = "Claude Opus 4.7" },
+                new() { Id = "gpt-5-mini", Name = "GPT-5 mini" },
+                new() { Id = "claude-sonnet-4.5", Name = "Claude Sonnet 4.5" },
+            });
+
+        // Act
+        var result = await _service.GetModelsAsync();
+
+        // Assert
+        Assert.Equal("gpt-5-mini", result.Models[0].Value);
+        Assert.Equal("auto", result.Models[^1].Value);
+    }
+
+    [Fact]
     public async Task GetModelsAsync_SetsValidCacheTimestamps()
     {
         // Arrange
@@ -279,7 +346,7 @@ public class ModelsServiceTests : IDisposable
 
         // Assert - should get the hardcoded fallback (3 models)
         Assert.Equal(3, models.Count);
-        Assert.Contains(models, m => m.Value == "gpt-4o");
+        Assert.Contains(models, m => m.Value == "claude-sonnet-4");
     }
 
     [Fact]
@@ -297,7 +364,7 @@ public class ModelsServiceTests : IDisposable
 
             // Assert
             Assert.Equal(3, models.Count);
-            Assert.Contains(models, m => m.Value == "gpt-4o");
+            Assert.Contains(models, m => m.Value == "claude-sonnet-4");
         }
         finally
         {

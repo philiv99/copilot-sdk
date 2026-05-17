@@ -1,3 +1,5 @@
+using GitHub.Copilot.SDK;
+
 namespace CopilotSdk.Api.Models.Domain;
 
 /// <summary>
@@ -13,7 +15,7 @@ public class SessionConfig
     /// <summary>
     /// Model to use for the session (e.g., "gpt-4", "gpt-3.5-turbo").
     /// </summary>
-    public string Model { get; set; } = "claude-opus-4.5";
+    public string Model { get; set; } = "claude-sonnet-4";
 
     /// <summary>
     /// Whether to enable streaming responses.
@@ -45,4 +47,9 @@ public class SessionConfig
     /// Custom tool definitions for this session.
     /// </summary>
     public List<ToolDefinition>? Tools { get; set; }
+
+    /// <summary>
+    /// Optional SDK permission handler used for built-in tool permission requests.
+    /// </summary>
+    public PermissionHandler? OnPermissionRequest { get; set; }
 }

@@ -35,9 +35,8 @@ describe('ModelSelector', () => {
 
   const mockModelsResponse = {
     models: [
-      { value: 'gpt-4o', label: 'GPT-4o', description: 'Most capable GPT-4o model for complex tasks' },
-      { value: 'gpt-4o-mini', label: 'GPT-4o Mini', description: 'Fast and efficient for simpler tasks' },
-      { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', description: 'Balanced performance and speed from Anthropic' },
+      { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', description: 'Default fast model for app creation and coding tasks' },
+      { value: 'gpt-5-mini', label: 'GPT-5 Mini', description: 'Fast model for iterative coding and app creation' },
       { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', description: 'Google\'s most capable model' },
     ],
     cachedAt: new Date().toISOString(),
@@ -52,36 +51,36 @@ describe('ModelSelector', () => {
 
   describe('rendering', () => {
     it('renders the model selector', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
       expect(screen.getByTestId('model-selector')).toBeInTheDocument();
     });
 
     it('renders label', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
       expect(screen.getByText('Model')).toBeInTheDocument();
     });
 
     it('renders custom label', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} label="Select Model" />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} label="Select Model" />);
       expect(screen.getByText('Select Model')).toBeInTheDocument();
     });
 
     it('renders with default models initially', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
       const select = screen.getByTestId('model-select');
       expect(select).toBeInTheDocument();
     });
 
     it('renders with correct selected value', () => {
-      render(<ModelSelector value="gpt-4o-mini" onChange={mockOnChange} />);
+      render(<ModelSelector value="gpt-5-mini" onChange={mockOnChange} />);
       const select = screen.getByTestId('model-select') as HTMLSelectElement;
-      expect(select.value).toBe('gpt-4o-mini');
+      expect(select.value).toBe('gpt-5-mini');
     });
   });
 
   describe('API fetching', () => {
     it('fetches models from API when no cache exists', async () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
       
       await waitFor(() => {
         expect(mockGetModels).toHaveBeenCalledTimes(1);
@@ -95,7 +94,7 @@ describe('ModelSelector', () => {
       };
       localStorageMock.getItem.mockReturnValue(JSON.stringify(cachedData));
 
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
 
       // Give time for useEffect to run
       await new Promise(resolve => setTimeout(resolve, 0));
@@ -110,7 +109,7 @@ describe('ModelSelector', () => {
       };
       localStorageMock.getItem.mockReturnValue(JSON.stringify(expiredCacheData));
 
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
 
       await waitFor(() => {
         expect(mockGetModels).toHaveBeenCalledTimes(1);
@@ -118,7 +117,7 @@ describe('ModelSelector', () => {
     });
 
     it('saves models to cache after fetching', async () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
 
       await waitFor(() => {
         expect(localStorageMock.setItem).toHaveBeenCalled();
@@ -128,42 +127,48 @@ describe('ModelSelector', () => {
 
   describe('description', () => {
     it('does not show description by default', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
       expect(screen.queryByTestId('model-description')).not.toBeInTheDocument();
     });
 
     it('shows description when showDescriptions is true', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} showDescriptions={true} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} showDescriptions={true} />);
       expect(screen.getByTestId('model-description')).toBeInTheDocument();
     });
 
     it('shows correct description for selected model', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} showDescriptions={true} />);
-      expect(screen.getByText('Most capable GPT-4o model for complex tasks')).toBeInTheDocument();
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} showDescriptions={true} />);
+      expect(screen.getByTestId('model-description')).toHaveTextContent('Default fast model for app creation and coding tasks');
+    });
+
+    it('explains what the chosen model controls', () => {
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} showDescriptions={true} />);
+      expect(screen.getByTestId('model-description')).toHaveTextContent("assistant responses");
+      expect(screen.getByTestId('model-description')).toHaveTextContent("tool-guided app or code generation");
     });
   });
 
   describe('interactions', () => {
     it('calls onChange when selection changes', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
       
       const select = screen.getByTestId('model-select');
-      fireEvent.change(select, { target: { value: 'gpt-4o-mini' } });
+      fireEvent.change(select, { target: { value: 'gpt-5-mini' } });
       
-      expect(mockOnChange).toHaveBeenCalledWith('gpt-4o-mini');
+      expect(mockOnChange).toHaveBeenCalledWith('gpt-5-mini');
     });
   });
 
   describe('disabled state', () => {
     it('disables the select when disabled prop is true', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} disabled={true} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} disabled={true} />);
       expect(screen.getByTestId('model-select')).toBeDisabled();
     });
   });
 
   describe('custom className', () => {
     it('applies custom className', () => {
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} className="custom-class" />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} className="custom-class" />);
       expect(screen.getByTestId('model-selector')).toHaveClass('custom-class');
     });
   });
@@ -172,7 +177,7 @@ describe('ModelSelector', () => {
     it('shows error message when API fails', async () => {
       mockGetModels.mockRejectedValue(new Error('API Error'));
 
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
 
       await waitFor(() => {
         expect(screen.getByTestId('model-error')).toBeInTheDocument();
@@ -182,7 +187,7 @@ describe('ModelSelector', () => {
     it('keeps using default models when API fails', async () => {
       mockGetModels.mockRejectedValue(new Error('API Error'));
 
-      render(<ModelSelector value="gpt-4o" onChange={mockOnChange} />);
+      render(<ModelSelector value="claude-sonnet-4" onChange={mockOnChange} />);
 
       await waitFor(() => {
         expect(screen.getByTestId('model-select')).toBeInTheDocument();

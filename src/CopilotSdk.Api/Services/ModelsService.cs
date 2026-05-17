@@ -2,6 +2,7 @@ using System.Text.Json;
 using CopilotSdk.Api.Managers;
 using CopilotSdk.Api.Models.Responses;
 using Microsoft.Extensions.Caching.Memory;
+using SdkModelInfo = GitHub.Copilot.SDK.ModelInfo;
 
 namespace CopilotSdk.Api.Services;
 
@@ -16,14 +17,26 @@ internal class ModelsConfigFile
 
 /// <summary>
 /// Service for retrieving available AI models from the Copilot SDK.
-/// Loads the default model list from an external models.json configuration file,
-/// falling back to a minimal hardcoded list only if the file is missing or unreadable.
+/// Falls back to a minimal static list only if the SDK model lookup is unavailable.
 /// Caches the models list for one week.
 /// </summary>
 public class ModelsService : IModelsService
 {
     private const string CacheKey = "AvailableModels";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromDays(7);
+    private static readonly string[] PreferredModelOrder =
+    {
+        "gpt-5-mini",
+        "gpt-5.4-mini",
+        "claude-sonnet-4.6",
+        "claude-sonnet-4.5",
+        "claude-sonnet-4",
+        "gpt-5.2-codex",
+        "gpt-5.3-codex",
+        "gpt-5.2",
+        "gpt-5.4",
+        "gpt-5.5"
+    };
 
     /// <summary>
     /// Relative path to the external models configuration file.
@@ -41,8 +54,8 @@ public class ModelsService : IModelsService
     /// </summary>
     private static readonly List<ModelInfo> HardcodedFallbackModels = new()
     {
-        new ModelInfo { Value = "gpt-4o", Label = "GPT-4o", Description = "Most capable GPT-4o model for complex tasks" },
-        new ModelInfo { Value = "claude-sonnet-4", Label = "Claude Sonnet 4", Description = "Balanced performance and speed from Anthropic" },
+        new ModelInfo { Value = "claude-sonnet-4", Label = "Claude Sonnet 4", Description = "Default fast model for app creation and coding tasks" },
+        new ModelInfo { Value = "gpt-5-mini", Label = "GPT-5 Mini", Description = "Fast model for iterative coding and app creation" },
         new ModelInfo { Value = "gemini-2.5-pro", Label = "Gemini 2.5 Pro", Description = "Google's most capable model" },
     };
 
@@ -130,29 +143,31 @@ public class ModelsService : IModelsService
 
         try
         {
-            // Check if the client is connected
             var status = _clientManager.Status;
-            if (status.IsConnected)
+            if (!status.IsConnected)
             {
-                // Currently the SDK doesn't have a GetModels method,
-                // so we load from the external config file.
-                // When the SDK adds this capability, we can call it here instead.
-                _logger.LogDebug("Client is connected, loading models from config file (SDK doesn't have GetModels endpoint yet)");
-                models = LoadModelsFromConfig();
-            }
-            else
-            {
-                _logger.LogDebug("Client is not connected, loading models from config file");
-                models = LoadModelsFromConfig();
+                _logger.LogInformation("Copilot client is not connected; starting it before loading models");
+                await _clientManager.StartAsync(cancellationToken);
             }
 
-            // Simulate async operation for consistency
-            await Task.CompletedTask;
+            var sdkModels = await _clientManager.ListModelsAsync(cancellationToken);
+            models = sdkModels
+                .Where(m => !string.IsNullOrWhiteSpace(m.Id))
+                .Select(MapSdkModel)
+                .OrderBy(GetModelSortRank)
+                .ThenBy(m => m.Label, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (models.Count == 0)
+            {
+                _logger.LogWarning("SDK returned no models, using fallback list");
+                models = LoadModelsFromConfig();
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error fetching models, using hardcoded fallback list");
-            models = HardcodedFallbackModels;
+            _logger.LogWarning(ex, "Error fetching models from Copilot SDK, using fallback list");
+            models = LoadModelsFromConfig();
         }
 
         var response = new ModelsResponse
@@ -171,5 +186,67 @@ public class ModelsService : IModelsService
         _logger.LogInformation("Models cached until {ExpiresAt} ({ModelCount} models)", expiresAt, models.Count);
 
         return response;
+    }
+
+    private static ModelInfo MapSdkModel(SdkModelInfo model)
+    {
+        var supportsVision = model.Capabilities?.Supports?.Vision == true;
+        var contextWindow = model.Capabilities?.Limits?.MaxContextWindowTokens ?? 0;
+        var descriptionParts = new List<string>();
+
+        if (contextWindow > 0)
+        {
+            descriptionParts.Add($"Context window: {contextWindow:N0} tokens");
+        }
+
+        descriptionParts.Add(supportsVision ? "Supports vision inputs" : "Text-only model");
+
+        if (model.Billing?.Multiplier > 0)
+        {
+            descriptionParts.Add($"Billing multiplier: {model.Billing.Multiplier:0.##}x");
+        }
+
+        if (!string.IsNullOrWhiteSpace(model.Policy?.State))
+        {
+            descriptionParts.Add($"Policy: {model.Policy.State}");
+        }
+
+        return new ModelInfo
+        {
+            Value = model.Id,
+            Label = string.IsNullOrWhiteSpace(model.Name) ? FormatModelLabel(model.Id) : model.Name,
+            Description = string.Join(". ", descriptionParts)
+        };
+    }
+
+    private static int GetModelSortRank(ModelInfo model)
+    {
+        var preferredIndex = Array.FindIndex(
+            PreferredModelOrder,
+            preferred => string.Equals(preferred, model.Value, StringComparison.OrdinalIgnoreCase));
+
+        if (preferredIndex >= 0)
+        {
+            return preferredIndex;
+        }
+
+        if (string.Equals(model.Value, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return 900;
+        }
+
+        if (model.Value.Contains("opus", StringComparison.OrdinalIgnoreCase))
+        {
+            return 800;
+        }
+
+        return 500;
+    }
+
+    private static string FormatModelLabel(string modelId)
+    {
+        return string.Join(" ", modelId
+            .Split('-', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Length <= 3 ? part.ToUpperInvariant() : char.ToUpperInvariant(part[0]) + part[1..]));
     }
 }

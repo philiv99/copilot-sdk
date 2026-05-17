@@ -33,6 +33,12 @@ public class SessionEventDto
     public bool? Ephemeral { get; set; }
 
     /// <summary>
+    /// When this event was relayed from a sub-agent (child) session, identifies which agent
+    /// produced it. Null for events emitted by the user-facing (orchestrator/parent) session.
+    /// </summary>
+    public string? AgentId { get; set; }
+
+    /// <summary>
     /// Event-specific data payload.
     /// </summary>
     public object? Data { get; set; }
@@ -310,6 +316,23 @@ public class SessionIdleDataDto
 }
 
 /// <summary>
+/// API-generated progress update for long-running session work.
+/// </summary>
+public class SessionProgressDataDto
+{
+    public string Message { get; set; } = string.Empty;
+    public string Phase { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
+    public string? AgentId { get; set; }
+    public string? ExecutionId { get; set; }
+    public string? Step { get; set; }
+    public int? StepIndex { get; set; }
+    public int? StepCount { get; set; }
+    public string? ToolName { get; set; }
+    public string? ToolCallId { get; set; }
+}
+
+/// <summary>
 /// Data for assistant.turn_start events.
 /// </summary>
 public class AssistantTurnStartDataDto
@@ -419,4 +442,10 @@ public class StreamingDeltaDto
     /// Total response size in bytes so far.
     /// </summary>
     public double? TotalBytes { get; set; }
+
+    /// <summary>
+    /// When this delta was relayed from a sub-agent (child) session, identifies which agent
+    /// produced it. Null for deltas emitted by the user-facing (orchestrator/parent) session.
+    /// </summary>
+    public string? AgentId { get; set; }
 }

@@ -108,6 +108,75 @@
   font-family: 'Monaco', 'Consolas', monospace;
 }
 
+/* Progress / activity log messages */
+.progress-message {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-start;
+  padding: 0.375rem 0.75rem;
+}
+
+.progress-message .progress-icon {
+  font-size: 0.875rem;
+}
+
+.progress-message .progress-text {
+  font-size: 0.8125rem;
+  color: #9ca3af;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.progress-message.complete .progress-text {
+  color: #6b7280;
+}
+
+/* Agent invocation / handoff events stand out as a live activity log */
+.progress-message.agent-event {
+  background-color: rgba(59, 130, 246, 0.08);
+  border-left: 3px solid #3b82f6;
+  border-radius: 0.25rem;
+  margin: 0.25rem 0;
+  padding: 0.5rem 0.75rem;
+}
+
+.progress-message.agent-event .system-event-type {
+  background-color: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-message.agent-event .progress-text {
+  color: #dbeafe;
+  font-weight: 500;
+}
+
+.progress-message.phase-handoff {
+  border-left-color: #a855f7;
+}
+
+.progress-message.phase-handoff .system-event-type {
+  background-color: rgba(168, 85, 247, 0.18);
+  color: #d8b4fe;
+}
+
+.progress-message.phase-task-step,
+.progress-message.phase-task-step-planned,
+.progress-message.phase-task-step-complete,
+.progress-message.phase-task-step-error {
+  border-left-color: #14b8a6;
+}
+
+.progress-message.phase-task-step-error {
+  border-left-color: #ef4444;
+}
+
 /* Custom scrollbar */
 .chat-history::-webkit-scrollbar {
   width: 8px;

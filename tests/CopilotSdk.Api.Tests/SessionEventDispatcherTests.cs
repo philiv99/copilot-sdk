@@ -32,6 +32,16 @@ public class SessionEventDispatcherTests
         _dispatcher = new SessionEventDispatcher(_hubContextMock.Object, _loggerMock.Object);
     }
 
+    private static async Task WaitForAsync(Func<bool> predicate, int timeoutMs = 1000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (predicate()) return;
+            await Task.Delay(10);
+        }
+    }
+
     #region CreateHandler Tests
 
     [Fact]
@@ -64,8 +74,12 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedSessionId = args[0] as string;
-                capturedDto = args[1] as SessionEventDto;
+                var dto = args[1] as SessionEventDto;
+                if (dto?.Type == "session.idle")
+                {
+                    capturedSessionId = args[0] as string;
+                    capturedDto = dto;
+                }
             })
             .Returns(Task.CompletedTask);
 
@@ -73,7 +87,7 @@ public class SessionEventDispatcherTests
         await _dispatcher.DispatchEventAsync(sessionId, CreateSessionIdleEvent());
 
         // Assert
-        _hubClientsMock.Verify(c => c.Group(expectedGroup), Times.Once);
+        _hubClientsMock.Verify(c => c.Group(expectedGroup), Times.AtLeastOnce);
         Assert.Equal(sessionId, capturedSessionId);
         Assert.NotNull(capturedDto);
         Assert.Equal("session.idle", capturedDto.Type);
@@ -118,7 +132,8 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[1] as SessionEventDto;
+                var dto = args[1] as SessionEventDto;
+                if (dto?.Type == "session.error") capturedDto = dto;
             })
             .Returns(Task.CompletedTask);
 
@@ -271,7 +286,8 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[1] as SessionEventDto;
+                var dto = args[1] as SessionEventDto;
+                if (dto?.Type == "tool.execution_start") capturedDto = dto;
             })
             .Returns(Task.CompletedTask);
 
@@ -299,7 +315,8 @@ public class SessionEventDispatcherTests
             .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
             .Callback<string, object[], CancellationToken>((_, args, _) =>
             {
-                capturedDto = args[1] as SessionEventDto;
+                var dto = args[1] as SessionEventDto;
+                if (dto?.Type == "tool.execution_complete") capturedDto = dto;
             })
             .Returns(Task.CompletedTask);
 
@@ -314,6 +331,116 @@ public class SessionEventDispatcherTests
         var data = Assert.IsType<ToolExecutionCompleteDataDto>(capturedDto.Data);
         Assert.Equal("call-123", data.ToolCallId);
         Assert.Equal("Found 5 files", data.Result);
+    }
+
+    #endregion
+
+    #region CreateRelayHandler Tests
+
+    [Fact]
+    public async Task CreateRelayHandler_ProjectsAssistantMessage_OnParentGroup_WithAgentId()
+    {
+        // Arrange
+        var parentSessionId = "parent-1";
+        var agentId = "coder";
+        SessionEventDto? capturedDto = null;
+        string? capturedSessionId = null;
+
+        _clientProxyMock
+            .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
+            .Callback<string, object[], CancellationToken>((_, args, _) =>
+            {
+                capturedSessionId = args[0] as string;
+                capturedDto = args[1] as SessionEventDto;
+            })
+            .Returns(Task.CompletedTask);
+
+        var handler = _dispatcher.CreateRelayHandler(parentSessionId, agentId);
+
+        // Act
+        handler(CreateAssistantMessageEvent("msg-x", "child output"));
+        // Handler is fire-and-forget; give the background task a moment to run.
+        await WaitForAsync(() => capturedDto != null);
+
+        // Assert: events were routed to the PARENT group, not the child's, and tagged with the agent id.
+        _hubClientsMock.Verify(c => c.Group($"session-{parentSessionId}"), Times.AtLeastOnce);
+        Assert.Equal(parentSessionId, capturedSessionId);
+        Assert.NotNull(capturedDto);
+        Assert.Equal(agentId, capturedDto.AgentId);
+    }
+
+    [Fact]
+    public async Task CreateRelayHandler_ProjectsStreamingDelta_OnParentGroup_WithAgentId()
+    {
+        var parentSessionId = "parent-2";
+        var agentId = "code-reviewer";
+        StreamingDeltaDto? capturedDelta = null;
+
+        _clientProxyMock
+            .Setup(c => c.SendCoreAsync("OnStreamingDelta", It.IsAny<object[]>(), default))
+            .Callback<string, object[], CancellationToken>((_, args, _) =>
+            {
+                capturedDelta = args[0] as StreamingDeltaDto;
+            })
+            .Returns(Task.CompletedTask);
+
+        var handler = _dispatcher.CreateRelayHandler(parentSessionId, agentId);
+
+        handler(CreateAssistantMessageDeltaEvent("msg-y", "chunk"));
+        await WaitForAsync(() => capturedDelta != null);
+
+        _hubClientsMock.Verify(c => c.Group($"session-{parentSessionId}"), Times.AtLeastOnce);
+        Assert.NotNull(capturedDelta);
+        Assert.Equal(parentSessionId, capturedDelta.SessionId);
+        Assert.Equal(agentId, capturedDelta.AgentId);
+    }
+
+    [Fact]
+    public async Task CreateRelayHandler_ToolStart_EmitsProgressWithAgentAndCommandSummary()
+    {
+        var parentSessionId = "parent-3";
+        var agentId = "coder";
+        SessionEventDto? capturedProgress = null;
+
+        _clientProxyMock
+            .Setup(c => c.SendCoreAsync("OnSessionEvent", It.IsAny<object[]>(), default))
+            .Callback<string, object[], CancellationToken>((_, args, _) =>
+            {
+                var dto = args[1] as SessionEventDto;
+                if (dto?.Type == "session.progress")
+                {
+                    capturedProgress = dto;
+                }
+            })
+            .Returns(Task.CompletedTask);
+
+        var handler = _dispatcher.CreateRelayHandler(parentSessionId, agentId);
+
+        handler(CreateToolExecutionStartEvent(
+            "call-456",
+            "run_in_terminal",
+            new Dictionary<string, object?> { ["command"] = "git init" }));
+
+        await WaitForAsync(() => capturedProgress != null);
+
+        Assert.NotNull(capturedProgress);
+        Assert.Equal("session.progress", capturedProgress.Type);
+        Assert.Equal(agentId, capturedProgress.AgentId);
+        var data = Assert.IsType<SessionProgressDataDto>(capturedProgress.Data);
+        Assert.Equal(agentId, data.AgentId);
+        Assert.Equal("tool", data.Phase);
+        Assert.Equal("run_in_terminal", data.ToolName);
+        Assert.Equal("call-456", data.ToolCallId);
+        Assert.Contains("git init", data.Message);
+    }
+
+    [Fact]
+    public void ExtractToolActionSummary_ReadsCommandArgument()
+    {
+        var summary = SessionEventDispatcher.ExtractToolActionSummary(
+            new Dictionary<string, object?> { ["Command"] = "npm create vite@latest my-app -- --template react-ts" });
+
+        Assert.Equal("npm create vite@latest my-app -- --template react-ts", summary);
     }
 
     #endregion
@@ -417,7 +544,7 @@ public class SessionEventDispatcherTests
         };
     }
 
-    private static ToolExecutionStartEvent CreateToolExecutionStartEvent(string toolCallId, string toolName)
+    private static ToolExecutionStartEvent CreateToolExecutionStartEvent(string toolCallId, string toolName, object? arguments = null)
     {
         return new ToolExecutionStartEvent
         {
@@ -426,7 +553,8 @@ public class SessionEventDispatcherTests
             Data = new ToolExecutionStartData
             {
                 ToolCallId = toolCallId,
-                ToolName = toolName
+                ToolName = toolName,
+                Arguments = arguments
             }
         };
     }

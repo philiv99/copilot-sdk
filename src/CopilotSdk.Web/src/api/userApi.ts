@@ -30,9 +30,41 @@ const API_BASE_URL = process.env.REACT_APP_API_BASE_URL
 const USER_ID_KEY = 'copilot-sdk-user-id';
 
 /**
+ * Local development auth bypass identity.
+ */
+export const AUTH_BYPASS_USER_ID = 'dev-admin';
+
+const AUTH_BYPASS_TIMESTAMP = '2026-01-01T00:00:00.000Z';
+
+/** Whether auth bypass should be active. */
+export function isAuthBypassEnabled(): boolean {
+  return process.env.NODE_ENV !== 'test';
+}
+
+/** Get the default admin user used by auth bypass. */
+export function getAuthBypassUser(): UserResponse {
+  return {
+    id: AUTH_BYPASS_USER_ID,
+    username: 'admin',
+    email: 'admin@local',
+    displayName: 'Administrator',
+    role: 'Admin',
+    avatarType: 'Preset',
+    avatarData: 'wizard',
+    isActive: true,
+    createdAt: AUTH_BYPASS_TIMESTAMP,
+    updatedAt: AUTH_BYPASS_TIMESTAMP,
+    lastLoginAt: AUTH_BYPASS_TIMESTAMP,
+  };
+}
+
+/**
  * Get the stored user ID from localStorage.
  */
 export function getStoredUserId(): string | null {
+  if (isAuthBypassEnabled()) {
+    return AUTH_BYPASS_USER_ID;
+  }
   return localStorage.getItem(USER_ID_KEY);
 }
 
@@ -40,6 +72,11 @@ export function getStoredUserId(): string | null {
  * Store the user ID in localStorage.
  */
 export function setStoredUserId(userId: string | null): void {
+  if (isAuthBypassEnabled()) {
+    localStorage.setItem(USER_ID_KEY, AUTH_BYPASS_USER_ID);
+    return;
+  }
+
   if (userId) {
     localStorage.setItem(USER_ID_KEY, userId);
   } else {
@@ -97,6 +134,15 @@ export async function register(request: RegisterRequest): Promise<UserResponse> 
 
 /** Login with username and password. */
 export async function login(request: LoginRequest): Promise<LoginResponse> {
+  if (isAuthBypassEnabled()) {
+    setStoredUserId(AUTH_BYPASS_USER_ID);
+    return {
+      success: true,
+      message: 'Auth bypass enabled.',
+      user: getAuthBypassUser(),
+    };
+  }
+
   try {
     const response = await userClient.post<LoginResponse>('/login', request);
     if (response.data.success && response.data.user) {
@@ -110,6 +156,11 @@ export async function login(request: LoginRequest): Promise<LoginResponse> {
 
 /** Logout the current user. */
 export async function logout(): Promise<void> {
+  if (isAuthBypassEnabled()) {
+    setStoredUserId(AUTH_BYPASS_USER_ID);
+    return;
+  }
+
   try {
     await userClient.post('/logout');
   } catch {
@@ -120,6 +171,11 @@ export async function logout(): Promise<void> {
 
 /** Get the current user's profile. */
 export async function getCurrentUser(): Promise<UserResponse | null> {
+  if (isAuthBypassEnabled()) {
+    setStoredUserId(AUTH_BYPASS_USER_ID);
+    return getAuthBypassUser();
+  }
+
   try {
     const response = await userClient.get<UserResponse>('/me');
     return response.data;
@@ -133,6 +189,18 @@ export async function getCurrentUser(): Promise<UserResponse | null> {
 
 /** Update the current user's profile. */
 export async function updateProfile(request: UpdateProfileRequest): Promise<UserResponse> {
+  if (isAuthBypassEnabled()) {
+    const user = getAuthBypassUser();
+    return {
+      ...user,
+      displayName: request.displayName ?? user.displayName,
+      email: request.email ?? user.email,
+      avatarType: (request.avatarType as UserResponse['avatarType']) ?? user.avatarType,
+      avatarData: request.avatarData ?? user.avatarData,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   try {
     const response = await userClient.put<UserResponse>('/me', request);
     return response.data;
@@ -143,6 +211,10 @@ export async function updateProfile(request: UpdateProfileRequest): Promise<User
 
 /** Change the current user's password. */
 export async function changePassword(request: ChangePasswordRequest): Promise<void> {
+  if (isAuthBypassEnabled()) {
+    return;
+  }
+
   try {
     await userClient.put('/me/password', request);
   } catch (error) {
@@ -152,6 +224,16 @@ export async function changePassword(request: ChangePasswordRequest): Promise<vo
 
 /** Update the current user's avatar. */
 export async function updateAvatar(avatarType: string, avatarData?: string | null): Promise<UserResponse> {
+  if (isAuthBypassEnabled()) {
+    const user = getAuthBypassUser();
+    return {
+      ...user,
+      avatarType: avatarType as UserResponse['avatarType'],
+      avatarData,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   try {
     const response = await userClient.put<UserResponse>('/me/avatar', { avatarType, avatarData });
     return response.data;
@@ -173,6 +255,10 @@ export async function getAllUsers(activeOnly?: boolean): Promise<UserListRespons
 
 /** Get a user by ID (admin only). */
 export async function getUserById(userId: string): Promise<UserResponse> {
+  if (isAuthBypassEnabled() && userId === AUTH_BYPASS_USER_ID) {
+    return getAuthBypassUser();
+  }
+
   try {
     const response = await userClient.get<UserResponse>(`/${userId}`);
     return response.data;

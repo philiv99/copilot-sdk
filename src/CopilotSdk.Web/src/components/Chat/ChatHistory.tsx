@@ -10,6 +10,7 @@ import {
   ToolExecutionStartData,
   ToolExecutionCompleteData,
   SessionErrorData,
+  SessionProgressData,
 } from '../../types';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
@@ -38,13 +39,15 @@ export interface ChatHistoryProps {
   autoScroll?: boolean;
   /** Whether the session is currently processing. */
   isProcessing?: boolean;
+  /** User-visible detail for the current processing state. */
+  processingLabel?: string;
 }
 
 /**
  * Group events by their parent/related relationships.
  */
 interface ProcessedEvent {
-  type: 'user' | 'assistant' | 'reasoning' | 'tool' | 'error' | 'system';
+  type: 'user' | 'assistant' | 'reasoning' | 'tool' | 'error' | 'progress' | 'system';
   event: SessionEvent;
   toolComplete?: SessionEvent;
 }
@@ -106,6 +109,10 @@ function processEvents(events: SessionEvent[]): ProcessedEvent[] {
         processed.push({ type: 'error', event });
         break;
 
+      case 'session.progress':
+        processed.push({ type: 'progress', event });
+        break;
+
       // Skip these event types in the chat display
       case 'assistant.message_delta':
       case 'assistant.reasoning_delta':
@@ -142,6 +149,29 @@ function ErrorMessage({ data }: { data: SessionErrorData }) {
   );
 }
 
+function ProgressMessage({ data }: { data: SessionProgressData }) {
+  const isAgent = !!data.agentId || data.phase === 'agent' || data.phase === 'handoff';
+  const icon =
+    data.phase === 'handoff' ? '↩' :
+    data.phase === 'agent' ? '▶' :
+    data.phase.startsWith('task-step') ? '•' :
+    data.phase === 'tool' ? '🔧' :
+    data.phase === 'tool-error' || data.phase === 'error' ? '⚠️' :
+    data.phase === 'abort' ? '⏹' :
+    data.phase === 'thinking' ? '💭' : null;
+  const phaseLabel = data.agentId ? `${data.agentId}:${data.phase}` : data.phase;
+  return (
+    <div
+      className={`system-message progress-message phase-${data.phase} ${data.isActive ? 'active' : 'complete'} ${isAgent ? 'agent-event' : ''}`}
+      data-testid="progress-message"
+    >
+      {icon && <span className="progress-icon" aria-hidden="true">{icon}</span>}
+      <span className="system-event-type">{phaseLabel}</span>
+      <span className="progress-text">{data.message}</span>
+    </div>
+  );
+}
+
 /**
  * Component displaying the chat history with all message types.
  */
@@ -154,6 +184,7 @@ export function ChatHistory({
   executingToolIds = new Set(),
   autoScroll = true,
   isProcessing = false,
+  processingLabel = 'Processing',
 }: ChatHistoryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -166,6 +197,20 @@ export function ChatHistory({
   }, [events, autoScroll, streamingContent.size]);
 
   const processedEvents = processEvents(events);
+  const completedMessageIds = new Set(
+    events
+      .filter((event) => event.type === 'assistant.message')
+      .map((event) => (event.data as AssistantMessageData).messageId)
+  );
+  const completedReasoningIds = new Set(
+    events
+      .filter((event) => event.type === 'assistant.reasoning')
+      .map((event) => (event.data as AssistantReasoningData).reasoningId)
+  );
+  const liveMessageEntries = Array.from(streamingContent.entries())
+    .filter(([messageId]) => !completedMessageIds.has(messageId));
+  const liveReasoningEntries = Array.from(streamingReasoning.entries())
+    .filter(([reasoningId]) => !completedReasoningIds.has(reasoningId));
 
   if (processedEvents.length === 0 && !isProcessing) {
     return (
@@ -246,6 +291,11 @@ export function ChatHistory({
                 <ErrorMessage key={event.id} data={event.data as SessionErrorData} />
               );
 
+            case 'progress':
+              return (
+                <ProgressMessage key={event.id} data={event.data as SessionProgressData} />
+              );
+
             case 'system':
               return (
                 <div key={event.id} className="system-message" data-testid="system-message">
@@ -258,9 +308,28 @@ export function ChatHistory({
           }
         })}
 
+        {liveReasoningEntries.map(([reasoningId, content]) => (
+          <ReasoningCollapsible
+            key={`live-reasoning-${reasoningId}`}
+            content={content}
+            reasoningId={reasoningId}
+            isStreaming={streamingReasoningIds.has(reasoningId)}
+            defaultExpanded={true}
+          />
+        ))}
+
+        {liveMessageEntries.map(([messageId, content]) => (
+          <AssistantMessage
+            key={`live-message-${messageId}`}
+            data={{ messageId, content }}
+            isStreaming={streamingMessageIds.has(messageId)}
+            streamingContent={content}
+          />
+        ))}
+
         {isProcessing && (
           <div className="processing-indicator">
-            <StreamingIndicator isStreaming={true} label="Processing" />
+            <StreamingIndicator isStreaming={true} label={processingLabel} />
           </div>
         )}
       </div>

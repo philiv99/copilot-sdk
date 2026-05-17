@@ -15,6 +15,8 @@ import {
   AssistantReasoningDeltaData,
   ToolExecutionStartData,
   ToolExecutionCompleteData,
+  AssistantTurnStartData,
+  SessionProgressData,
 } from '../types';
 import { ChatHistory, MessageInput, EventLogPanel } from '../components';
 import './SessionChatView.css';
@@ -49,6 +51,10 @@ function useStreamingAccumulator(events: SessionEvent[]) {
   const [streamingReasoningIds, setStreamingReasoningIds] = useState<Set<string>>(new Set());
   // Track which tools are currently executing
   const [executingToolIds, setExecutingToolIds] = useState<Set<string>>(new Set());
+  // Track active assistant turns even when no token deltas are emitted
+  const [activeTurnIds, setActiveTurnIds] = useState<Set<string>>(new Set());
+  // Track background agent work after delegate_to_agent has already returned
+  const [activeProgressIds, setActiveProgressIds] = useState<Set<string>>(new Set());
 
   // Process events to extract streaming state
   useEffect(() => {
@@ -57,6 +63,8 @@ function useStreamingAccumulator(events: SessionEvent[]) {
     const activeMessageIds = new Set<string>();
     const activeReasoningIds = new Set<string>();
     const activeToolIds = new Set<string>();
+    const activeTurns = new Set<string>();
+    const activeProgress = new Set<string>();
     const completedToolIds = new Set<string>();
     const completedMessageIds = new Set<string>();
 
@@ -104,6 +112,51 @@ function useStreamingAccumulator(events: SessionEvent[]) {
           break;
         }
 
+        case 'assistant.turn_start': {
+          const data = event.data as AssistantTurnStartData;
+          activeTurns.add(data.turnId);
+          break;
+        }
+
+        case 'session.progress': {
+          const data = event.data as SessionProgressData;
+          const progressKey = data.executionId || data.toolCallId || data.agentId || data.phase || event.id;
+          const isTerminalPhase = [
+            'done',
+            'abort',
+            'error',
+            'agent-error',
+            'handoff',
+            'tool-complete',
+            'tool-error',
+            'task-step-complete',
+            'task-step-error',
+            'permission-approved',
+            'permission-denied',
+            'agent-ready',
+          ].includes(data.phase);
+
+          if (data.isActive) {
+            activeProgress.add(progressKey);
+          }
+
+          if (!data.isActive || isTerminalPhase) {
+            activeProgress.delete(progressKey);
+          }
+
+          if (['done', 'abort', 'error'].includes(data.phase)) {
+            // A non-active progress event signals the session has stopped working
+            // (phases: "done", "abort", "error"). Treat this as a hard reset of all
+            // in-flight UI state so the Stop button doesn't get stuck.
+            activeTurns.clear();
+            activeMessageIds.clear();
+            activeReasoningIds.clear();
+            activeToolIds.clear();
+            activeProgress.clear();
+          }
+          break;
+        }
+
         case 'tool.execution_complete': {
           const data = event.data as ToolExecutionCompleteData;
           completedToolIds.add(data.toolCallId);
@@ -115,6 +168,20 @@ function useStreamingAccumulator(events: SessionEvent[]) {
           // Turn ended - clear active streaming
           activeMessageIds.clear();
           activeReasoningIds.clear();
+          activeTurns.clear();
+          break;
+
+        case 'abort':
+        case 'session.idle':
+        case 'session.error':
+          // Session has stopped: clear ALL in-flight UI state. Tools that were
+          // mid-execution when the abort fired never receive a tool.execution_complete
+          // event, so we must clear them explicitly here, otherwise isProcessing stays
+          // true and the Stop button remains visible/enabled forever.
+          activeMessageIds.clear();
+          activeReasoningIds.clear();
+          activeTurns.clear();
+          activeToolIds.clear();
           break;
       }
     }
@@ -125,6 +192,8 @@ function useStreamingAccumulator(events: SessionEvent[]) {
     setStreamingMessageIds(activeMessageIds);
     setStreamingReasoningIds(activeReasoningIds);
     setExecutingToolIds(activeToolIds);
+    setActiveTurnIds(activeTurns);
+    setActiveProgressIds(activeProgress);
   }, [events]);
 
   return {
@@ -133,7 +202,49 @@ function useStreamingAccumulator(events: SessionEvent[]) {
     streamingMessageIds,
     streamingReasoningIds,
     executingToolIds,
+    activeTurnIds,
+    activeProgressIds,
   };
+}
+
+const truncateStatus = (value: string, maxLength = 150): string => {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`;
+};
+
+const summarizeToolArguments = (args: unknown): string | null => {
+  if (!args || typeof args !== 'object') {
+    return null;
+  }
+
+  const values = args as Record<string, unknown>;
+  const candidates = [values.description, values.command, values.path, values.filePath, values.cwd, values.query];
+  const summary = candidates.find((value) => typeof value === 'string' && value.trim().length > 0);
+  return typeof summary === 'string' ? truncateStatus(summary, 110) : null;
+};
+
+function getProcessingLabel(events: SessionEvent[], executingToolIds: Set<string>): string {
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index];
+
+    if (event.type === 'session.progress') {
+      const data = event.data as SessionProgressData;
+      if (data.isActive && data.message) {
+        return `Processing - ${truncateStatus(data.message)}`;
+      }
+    }
+
+    if (event.type === 'tool.execution_start') {
+      const data = event.data as ToolExecutionStartData;
+      if (executingToolIds.has(data.toolCallId)) {
+        const summary = summarizeToolArguments(data.arguments);
+        const toolName = data.displayName || data.toolName;
+        return summary ? `Running ${toolName} - ${summary}` : `Running ${toolName}`;
+      }
+    }
+  }
+
+  return 'Processing';
 }
 
 /**
@@ -160,12 +271,19 @@ export function SessionChatView({
     streamingMessageIds,
     streamingReasoningIds,
     executingToolIds,
+    activeTurnIds,
+    activeProgressIds,
   } = useStreamingAccumulator(events);
 
   // Determine if currently processing
   const isProcessing = useMemo(() => {
-    return isSending || streamingMessageIds.size > 0 || streamingReasoningIds.size > 0 || executingToolIds.size > 0;
-  }, [isSending, streamingMessageIds.size, streamingReasoningIds.size, executingToolIds.size]);
+    return isSending || streamingMessageIds.size > 0 || streamingReasoningIds.size > 0 || executingToolIds.size > 0 || activeTurnIds.size > 0 || activeProgressIds.size > 0;
+  }, [isSending, streamingMessageIds.size, streamingReasoningIds.size, executingToolIds.size, activeTurnIds.size, activeProgressIds.size]);
+
+  const processingLabel = useMemo(
+    () => getProcessingLabel(events, executingToolIds),
+    [events, executingToolIds]
+  );
 
   // Handle sending a message
   const handleSend = useCallback(
@@ -277,6 +395,7 @@ export function SessionChatView({
             executingToolIds={executingToolIds}
             autoScroll={true}
             isProcessing={isProcessing}
+            processingLabel={processingLabel}
           />
 
           {/* Message input */}

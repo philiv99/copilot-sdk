@@ -177,7 +177,25 @@ function updateStreamingEvent(events: SessionEvent[], delta: StreamingDelta): Se
     return updatedEvents;
   }
 
-  return events;
+  const event: SessionEvent = {
+    id: crypto.randomUUID ? crypto.randomUUID() : `${delta.type}-${delta.id}-${Date.now()}`,
+    type: delta.type === 'reasoning' ? 'assistant.reasoning_delta' : 'assistant.message_delta',
+    timestamp: new Date().toISOString(),
+    ephemeral: true,
+    agentId: delta.agentId,
+    data: delta.type === 'reasoning'
+      ? {
+          reasoningId: delta.id,
+          deltaContent: delta.content,
+        }
+      : {
+          messageId: delta.id,
+          deltaContent: delta.content,
+          totalResponseSizeBytes: delta.totalBytes,
+        },
+  };
+
+  return [...events, event];
 }
 
 // #endregion

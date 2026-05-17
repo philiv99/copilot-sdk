@@ -1,3 +1,4 @@
+using System.Text;
 using CopilotSdk.Api.EventHandlers;
 using CopilotSdk.Api.Managers;
 using CopilotSdk.Api.Models.Domain;
@@ -21,6 +22,9 @@ public class SessionService : ISessionService
     private readonly IDevServerService _devServerService;
     private readonly IPersistenceService _persistenceService;
     private readonly IAgentTeamService _agentTeamService;
+    private readonly IAgentOrchestrationService _agentOrchestrationService;
+    private readonly IPermissionPolicyService _permissionPolicyService;
+    private readonly IModelsService _modelsService;
     private readonly ILogger<SessionService> _logger;
 
     public SessionService(
@@ -30,6 +34,9 @@ public class SessionService : ISessionService
         IDevServerService devServerService,
         IPersistenceService persistenceService,
         IAgentTeamService agentTeamService,
+        IAgentOrchestrationService agentOrchestrationService,
+        IPermissionPolicyService permissionPolicyService,
+        IModelsService modelsService,
         ILogger<SessionService> logger)
     {
         _clientManager = clientManager;
@@ -38,6 +45,9 @@ public class SessionService : ISessionService
         _devServerService = devServerService;
         _persistenceService = persistenceService;
         _agentTeamService = agentTeamService;
+        _agentOrchestrationService = agentOrchestrationService;
+        _permissionPolicyService = permissionPolicyService;
+        _modelsService = modelsService;
         _logger = logger;
     }
 
@@ -46,34 +56,84 @@ public class SessionService : ISessionService
     {
         _logger.LogInformation("Creating session with model {Model} for user {UserId}", request.Model, creatorUserId ?? "anonymous");
 
-        // If team/agents are specified, compose a team system message
+        // Resolve which specialist agents the orchestrator can delegate to (team mode).
+        var teamAgentIds = await ResolveTeamAgentIdsAsync(request, cancellationToken);
+        var isTeamSession = teamAgentIds.Count > 0;
+
+        // Build the session system message. In team mode we use ORCHESTRATOR-only routing
+        // (the single orchestrator prompt + a manifest of available specialists). The big
+        // "concatenate every agent prompt" mode is no longer used: each specialist runs in
+        // its own child session and never shares the parent's system message.
         var systemMessage = request.SystemMessage;
-        if (HasTeamConfiguration(request))
+        if (isTeamSession)
         {
-            systemMessage = await ComposeTeamSystemMessage(request, systemMessage, cancellationToken);
+            systemMessage = await BuildOrchestratorSystemMessageAsync(teamAgentIds, systemMessage, cancellationToken);
+        }
+
+        var model = await ResolveAvailableModelAsync(request.Model, forceRefresh: false, cancellationToken);
+        if (!string.Equals(model, request.Model, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Requested model {RequestedModel} is not in the available model list; using {FallbackModel}", request.Model, model);
         }
 
         var config = new DomainSessionConfig
         {
             SessionId = request.SessionId,
-            Model = request.Model,
+            Model = model,
             Streaming = request.Streaming,
             SystemMessage = systemMessage,
             AvailableTools = request.AvailableTools,
             ExcludedTools = request.ExcludedTools,
             Provider = request.Provider,
-            Tools = request.Tools
+            Tools = request.Tools,
+            OnPermissionRequest = _permissionPolicyService.HandlePermissionRequestAsync
         };
 
         // Build AIFunction collection from tool definitions
-        ICollection<AIFunction>? tools = null;
+        var tools = new List<AIFunction>();
         if (request.Tools != null && request.Tools.Count > 0)
         {
             _logger.LogInformation("Building {ToolCount} custom tools for session", request.Tools.Count);
-            tools = _toolExecutionService.BuildAIFunctions(request.Tools);
+            foreach (var f in _toolExecutionService.BuildAIFunctions(request.Tools))
+            {
+                tools.Add(f);
+            }
         }
 
-        var session = await _clientManager.CreateSessionAsync(config, tools, cancellationToken);
+        // For team sessions, register the delegate_to_agent tool. The parent session id is
+        // captured in the closure so the handler knows where to project child events.
+        if (isTeamSession)
+        {
+            var parentSessionId = string.IsNullOrWhiteSpace(request.SessionId)
+                ? Guid.NewGuid().ToString("N")
+                : request.SessionId!;
+            // If the caller supplied an explicit session id we use it; otherwise the SDK will
+            // generate one and the actual id is set after CreateSessionAsync. We rebuild the
+            // tool below if needed once we know the real id.
+            config.SessionId = parentSessionId;
+            tools.Add(_agentOrchestrationService.BuildDelegationProbeTool(parentSessionId));
+            tools.Add(_agentOrchestrationService.BuildDelegateTool(parentSessionId, teamAgentIds, model));
+        }
+
+        ICollection<AIFunction>? toolsCollection = tools.Count == 0 ? null : tools;
+
+        CopilotSession session;
+        try
+        {
+            session = await _clientManager.CreateSessionAsync(config, toolsCollection, cancellationToken);
+        }
+        catch (Exception ex) when (IsModelUnavailableError(ex))
+        {
+            var fallbackModel = await ResolveAvailableModelAsync(config.Model, forceRefresh: true, cancellationToken);
+            if (string.Equals(fallbackModel, config.Model, StringComparison.OrdinalIgnoreCase))
+            {
+                throw;
+            }
+
+            _logger.LogWarning(ex, "Model {RequestedModel} was rejected by the Copilot server; retrying with {FallbackModel}", config.Model, fallbackModel);
+            config.Model = fallbackModel;
+            session = await _clientManager.CreateSessionAsync(config, toolsCollection, cancellationToken);
+        }
 
         // Register the session in the SessionManager (persists to disk)
         await _sessionManager.RegisterSessionAsync(session.SessionId, session, config, creatorUserId, cancellationToken);
@@ -138,19 +198,32 @@ public class SessionService : ISessionService
     {
         _logger.LogInformation("Resuming session {SessionId}", sessionId);
 
+        var metadataBeforeResume = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
+        var teamAgentIds = await ResolveTeamAgentIdsAsync(metadataBeforeResume, cancellationToken);
+
         // Build AIFunction collection from tool definitions if provided
-        ICollection<AIFunction>? tools = null;
+        var toolsList = new List<AIFunction>();
         if (request?.Tools != null && request.Tools.Count > 0)
         {
             _logger.LogInformation("Building {ToolCount} custom tools for resumed session", request.Tools.Count);
-            tools = _toolExecutionService.BuildAIFunctions(request.Tools);
+            toolsList.AddRange(_toolExecutionService.BuildAIFunctions(request.Tools));
         }
+
+        if (teamAgentIds.Count > 0)
+        {
+            var model = metadataBeforeResume?.Config?.Model ?? "claude-sonnet-4";
+            toolsList.Add(_agentOrchestrationService.BuildDelegationProbeTool(sessionId));
+            toolsList.Add(_agentOrchestrationService.BuildDelegateTool(sessionId, teamAgentIds, model));
+        }
+
+        ICollection<AIFunction>? tools = toolsList.Count == 0 ? null : toolsList;
 
         var session = await _clientManager.ResumeSessionAsync(
             sessionId,
             request?.Streaming ?? false,
             request?.Provider,
             tools,
+            _permissionPolicyService.HandlePermissionRequestAsync,
             cancellationToken);
 
         // Update the session in the SessionManager (persists to disk)
@@ -312,10 +385,45 @@ public class SessionService : ISessionService
         return creator?.DisplayName;
     }
 
+    private async Task<string> ResolveAvailableModelAsync(string requestedModel, bool forceRefresh, CancellationToken cancellationToken)
+    {
+        var modelsResponse = forceRefresh
+            ? await _modelsService.RefreshModelsAsync(cancellationToken)
+            : await _modelsService.GetModelsAsync(cancellationToken);
+
+        if (modelsResponse.Models.Count == 0)
+        {
+            return requestedModel;
+        }
+
+        if (modelsResponse.Models.Any(model => string.Equals(model.Value, requestedModel, StringComparison.OrdinalIgnoreCase)))
+        {
+            return requestedModel;
+        }
+
+        return modelsResponse.Models[0].Value;
+    }
+
+    private static bool IsModelUnavailableError(Exception ex)
+    {
+        return ex.ToString().Contains("Model \"", StringComparison.OrdinalIgnoreCase)
+            && ex.ToString().Contains("is not available", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <inheritdoc/>
     public async Task<bool> DeleteSessionAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Deleting session {SessionId}", sessionId);
+
+        // Cascade-dispose any sub-agent (child) sessions belonging to this parent.
+        try
+        {
+            await _agentOrchestrationService.DisposeChildrenAsync(sessionId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error disposing children for session {SessionId}", sessionId);
+        }
 
         try
         {
@@ -355,6 +463,10 @@ public class SessionService : ISessionService
 
         try
         {
+            await _sessionManager.DispatchProgressAsync(sessionId, "Message queued", "queued", cancellationToken);
+
+            await PrepareTeamChildrenForMessageAsync(sessionId, cancellationToken);
+
             // Convert attachments to SDK format
             List<UserMessageDataAttachmentsItem>? attachments = null;
             if (request.Attachments != null && request.Attachments.Count > 0)
@@ -550,6 +662,17 @@ public class SessionService : ISessionService
             return false;
         }
 
+        // Cascade abort: stop any in-flight delegations to sub-agent children first so
+        // their tool calls (shell etc.) are interrupted, then abort the parent.
+        try
+        {
+            await _agentOrchestrationService.AbortChildrenAsync(sessionId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error aborting children for session {SessionId}", sessionId);
+        }
+
         try
         {
             await session.AbortAsync(cancellationToken);
@@ -702,8 +825,18 @@ public class SessionService : ISessionService
         var targetPath = appPath ?? metadata?.AppPath ?? await FindAppPathAsync(sessionId, cancellationToken);
         _logger.LogInformation("Starting dev server for session {SessionId} with resolved path: {TargetPath}", sessionId, targetPath);
 
+        if (string.IsNullOrEmpty(targetPath))
+        {
+            _logger.LogError("Could not determine app path for session {SessionId}", sessionId);
+            return new DevServerResponse
+            {
+                Success = false,
+                Message = "Could not determine application path for dev server."
+            };
+        }
+
         // Persist the resolved path immediately so future attempts don't need to re-detect
-        if (metadata != null && string.IsNullOrEmpty(metadata.AppPath) && targetPath != null)
+        if (metadata != null && string.IsNullOrEmpty(metadata.AppPath) && !string.IsNullOrEmpty(targetPath))
         {
             metadata.AppPath = targetPath;
             await _sessionManager.PersistSessionAsync(sessionId, metadata, cancellationToken);
@@ -1028,6 +1161,191 @@ public class SessionService : ISessionService
     {
         return (request.SelectedAgents != null && request.SelectedAgents.Count > 0)
             || !string.IsNullOrWhiteSpace(request.SelectedTeam);
+    }
+
+    /// <summary>
+    /// Resolves the list of specialist agent ids the orchestrator may delegate to. Explicit
+    /// SelectedAgents take priority over a SelectedTeam preset. Empty when not in team mode.
+    /// </summary>
+    private async Task<List<string>> ResolveTeamAgentIdsAsync(CreateSessionRequest request, CancellationToken cancellationToken)
+    {
+        var agentIds = request.SelectedAgents != null
+            ? new List<string>(request.SelectedAgents.Where(a => !string.IsNullOrWhiteSpace(a)))
+            : new List<string>();
+
+        if (agentIds.Count == 0 && !string.IsNullOrWhiteSpace(request.SelectedTeam))
+        {
+            var teamDetail = await _agentTeamService.GetTeamDetailAsync(request.SelectedTeam, cancellationToken);
+            if (teamDetail != null)
+            {
+                agentIds = new List<string>(teamDetail.Team.Agents);
+                if (string.IsNullOrWhiteSpace(request.WorkflowPattern))
+                {
+                    request.WorkflowPattern = teamDetail.Team.WorkflowPattern;
+                }
+            }
+        }
+
+        // The orchestrator is the parent; remove it from the delegation set so it can't
+        // recursively delegate to itself.
+        agentIds = agentIds
+            .Where(id => !string.Equals(id, "orchestrator", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return agentIds;
+    }
+
+    /// <summary>
+    /// Resolves the specialist ids from persisted session metadata. Used before sending
+    /// a parent turn so child sessions can be prepared outside tool execution callbacks.
+    /// </summary>
+    private async Task<List<string>> ResolveTeamAgentIdsAsync(Models.Domain.SessionMetadata? metadata, CancellationToken cancellationToken)
+    {
+        if (metadata == null)
+        {
+            return new List<string>();
+        }
+
+        var agentIds = metadata.SelectedAgents != null
+            ? new List<string>(metadata.SelectedAgents.Where(a => !string.IsNullOrWhiteSpace(a)))
+            : new List<string>();
+
+        if (agentIds.Count == 0 && !string.IsNullOrWhiteSpace(metadata.SelectedTeam))
+        {
+            var teamDetail = await _agentTeamService.GetTeamDetailAsync(metadata.SelectedTeam, cancellationToken);
+            if (teamDetail != null)
+            {
+                agentIds = new List<string>(teamDetail.Team.Agents);
+            }
+        }
+
+        return agentIds
+            .Where(id => !string.Equals(id, "orchestrator", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task PrepareTeamChildrenForMessageAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        var metadata = await _sessionManager.GetMetadataAsync(sessionId, cancellationToken);
+        var teamAgentIds = await ResolveTeamAgentIdsAsync(metadata, cancellationToken);
+        if (teamAgentIds.Count == 0)
+        {
+            return;
+        }
+
+        var model = metadata?.Config?.Model ?? "claude-sonnet-4";
+        await _agentOrchestrationService.PrepareChildrenAsync(sessionId, teamAgentIds, model, cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds the system message for the parent (orchestrator) session in team mode. This
+    /// embeds ONLY the orchestrator's prompt plus a manifest of available specialists. Each
+    /// specialist's full prompt runs in its own child session (via delegate_to_agent), not
+    /// in the parent. This is the key difference from the old "concatenate every agent
+    /// prompt" approach: it forces the model to actually invoke the delegate tool to do
+    /// work, instead of role-playing all specialists in a single prompt.
+    /// </summary>
+    private async Task<DomainSystemMessageConfig?> BuildOrchestratorSystemMessageAsync(
+        IReadOnlyList<string> teamAgentIds,
+        DomainSystemMessageConfig? existingSystemMessage,
+        CancellationToken cancellationToken)
+    {
+        var orchestrator = await _agentTeamService.GetAgentDetailAsync("orchestrator", cancellationToken);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("# Multi-Agent Orchestration Mode");
+        sb.AppendLine();
+        sb.AppendLine("You are the **Orchestrator**. The user is talking only to you.");
+        sb.AppendLine();
+        sb.AppendLine("You have ONE primary tool: `delegate_to_agent(agent_id, task)`. To get any actual");
+        sb.AppendLine("work done (shell commands, file edits, git, builds, tests, reviews) you MUST call");
+        sb.AppendLine("`delegate_to_agent` and let the specialist do it. Specialists run in their own");
+        sb.AppendLine("Copilot sessions with full shell/file/git tools.");
+        sb.AppendLine("`delegate_to_agent` BLOCKS until the specialist finishes the task and returns the");
+        sb.AppendLine("specialist's final summary. While it runs, progress events stream to the activity");
+        sb.AppendLine("log so the user sees what the specialist is doing in real time.");
+        sb.AppendLine("A diagnostic tool, `delegation_probe`, is also available. Use it only when the");
+        sb.AppendLine("user explicitly asks to test delegation/tool-call plumbing; it should return");
+        sb.AppendLine("immediately if backend custom tool callbacks are working.");
+        sb.AppendLine();
+        sb.AppendLine("**Hard rules:**");
+        sb.AppendLine("- NEVER narrate or simulate work. If a step requires execution, delegate it.");
+        sb.AppendLine("- NEVER paste code that should be written to disk - delegate to `coder` instead.");
+        sb.AppendLine("- Issue exactly one delegation per tool call. Wait for it to return before deciding what to do next.");
+        sb.AppendLine("- After `delegate_to_agent` returns, briefly summarize what the specialist did and either issue the next delegation or hand control back to the user.");
+        sb.AppendLine("- Never delegate project folder creation, git initialization, and app scaffolding as one bundled task.");
+        sb.AppendLine("- Every delegated task must include `Task execution steps:` with 2-6 numbered observable steps.");
+        sb.AppendLine("- Always emit `[AGENT: <id>]` on its own line before delegating, and");
+        sb.AppendLine("  `[HANDOFF: orchestrator]` on its own line after a delegation returns.");
+        sb.AppendLine("- Pass each specialist a self-contained task description with the context it needs.");
+        sb.AppendLine();
+        sb.AppendLine("**Available specialists** (use these exact ids in `agent_id`):");
+        if (teamAgentIds.Count == 0)
+        {
+            sb.AppendLine("- (none configured)");
+        }
+        else
+        {
+            foreach (var agentId in teamAgentIds)
+            {
+                var detail = await _agentTeamService.GetAgentDetailAsync(agentId, cancellationToken);
+                var description = ExtractFirstHeadingDescription(detail?.PromptContent) ?? agentId;
+                sb.AppendLine($"- `{agentId}` - {description}");
+            }
+        }
+        sb.AppendLine();
+
+        if (orchestrator != null && !string.IsNullOrWhiteSpace(orchestrator.PromptContent))
+        {
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine(orchestrator.PromptContent.TrimEnd());
+            sb.AppendLine();
+        }
+
+        if (!string.IsNullOrWhiteSpace(existingSystemMessage?.Content))
+        {
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine("# Additional Instructions");
+            sb.AppendLine();
+            sb.AppendLine(existingSystemMessage.Content.TrimEnd());
+            sb.AppendLine();
+        }
+
+        return new DomainSystemMessageConfig
+        {
+            Mode = "replace",
+            Content = sb.ToString().TrimEnd()
+        };
+    }
+
+    /// <summary>
+    /// Pulls a one-line description from a markdown prompt: the first non-empty content
+    /// line after the first heading, or the heading text itself.
+    /// </summary>
+    private static string? ExtractFirstHeadingDescription(string? promptContent)
+    {
+        if (string.IsNullOrWhiteSpace(promptContent)) return null;
+        var lines = promptContent.Split('\n');
+        string? heading = null;
+        foreach (var raw in lines)
+        {
+            var line = raw.Trim();
+            if (line.Length == 0) continue;
+            if (heading == null && line.StartsWith("#"))
+            {
+                heading = line.TrimStart('#', ' ');
+                continue;
+            }
+            if (heading != null && !line.StartsWith("#"))
+            {
+                return line.Length > 160 ? line.Substring(0, 160) + "..." : line;
+            }
+        }
+        return heading;
     }
 
     /// <summary>

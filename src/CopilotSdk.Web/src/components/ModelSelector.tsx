@@ -12,17 +12,15 @@ import './ModelSelector.css';
  * Keep in sync with models.json in the backend.
  */
 const DEFAULT_MODELS: ModelInfo[] = [
-  { value: 'gpt-4o', label: 'GPT-4o', description: 'Most capable GPT-4o model for complex tasks' },
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini', description: 'Fast and efficient for simpler tasks' },
-  { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', description: 'Balanced performance and speed from Anthropic' },
-  { value: 'claude-opus-4.6', label: 'Claude Opus 4.6', description: 'Latest Claude model with state-of-the-art performance' },
+  { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', description: 'Default fast model for app creation and coding tasks' },
+  { value: 'gpt-5-mini', label: 'GPT-5 Mini', description: 'Fast model for iterative coding and app creation' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', description: 'Google\'s most capable model' },
 ];
 
 /**
  * Cache key for storing models in localStorage.
  */
-const MODELS_CACHE_KEY = 'copilot_models_cache';
+const MODELS_CACHE_KEY = 'copilot_models_cache_v2';
 
 /**
  * Cache duration in milliseconds (1 week).
@@ -110,6 +108,9 @@ export function ModelSelector({
     const cached = loadCachedModels();
     if (cached) {
       setModels(cached);
+      if (!cached.some((model) => model.value === value)) {
+        onChange(cached[0].value);
+      }
       return;
     }
 
@@ -122,6 +123,9 @@ export function ModelSelector({
         if (response.models && response.models.length > 0) {
           setModels(response.models);
           saveCachedModels(response.models);
+          if (!response.models.some((model) => model.value === value)) {
+            onChange(response.models[0].value);
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load models');
@@ -132,7 +136,7 @@ export function ModelSelector({
     };
 
     fetchModels();
-  }, []);
+  }, [onChange, value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     onChange(e.target.value);
@@ -167,7 +171,7 @@ export function ModelSelector({
       )}
       {showDescriptions && selectedModel && (
         <p className="model-selector-description" data-testid="model-description">
-          {selectedModel.description}
+          {selectedModel.description} This model is used for the session's assistant responses, including chat turns, team/agent behavior from the system message, and any tool-guided app or code generation in that session.
         </p>
       )}
     </div>

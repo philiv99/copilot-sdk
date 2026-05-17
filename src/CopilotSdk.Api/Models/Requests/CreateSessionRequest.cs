@@ -35,7 +35,7 @@ public class CreateSessionRequest : IValidatableObject
     /// <summary>
     /// Model to use for the session (e.g., "gpt-4", "gpt-3.5-turbo").
     /// </summary>
-    public string Model { get; set; } = "claude-opus-4.5";
+    public string Model { get; set; } = "claude-sonnet-4";
 
     /// <summary>
     /// Whether to enable streaming responses.

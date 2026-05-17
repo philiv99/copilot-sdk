@@ -1,4 +1,5 @@
 using CopilotSdk.Api.Models.Domain;
+using SdkModelInfo = GitHub.Copilot.SDK.ModelInfo;
 
 namespace CopilotSdk.Api.Managers;
 
@@ -27,4 +28,9 @@ public interface ICopilotClientManager
     /// Stops the Copilot client gracefully.
     /// </summary>
     Task StopAsync();
+
+    /// <summary>
+    /// Lists models available to the connected Copilot client.
+    /// </summary>
+    Task<List<SdkModelInfo>> ListModelsAsync(CancellationToken cancellationToken = default);
 }

@@ -42,9 +42,9 @@ type UserAction =
 // #region Reducer
 
 const initialState: UserState = {
-  currentUser: null,
+  currentUser: process.env.NODE_ENV !== 'test' ? userApiModule.getAuthBypassUser() : null,
   isLoading: false,
-  isInitialized: false,
+  isInitialized: process.env.NODE_ENV !== 'test',
   error: null,
 };
 
@@ -115,20 +115,36 @@ const roleHierarchy: Record<UserRole, number> = {
 export function UserProvider({ children }: UserProviderProps) {
   const [state, dispatch] = useReducer(userReducer, initialState);
 
-  // Check for existing session on mount
+  // Check for existing session on mount.
+  // Auth is bypassed outside tests: the app always starts with the local
+  // development admin identity without calling the login endpoint.
+  // Auto-login is disabled under NODE_ENV === 'test' to preserve existing
+  // unit-test behavior that exercises explicit login flows.
   useEffect(() => {
     const checkAuth = async () => {
+      if (process.env.NODE_ENV !== 'test') {
+        userApiModule.setStoredUserId(userApiModule.AUTH_BYPASS_USER_ID);
+        dispatch({ type: 'SET_USER', payload: userApiModule.getAuthBypassUser() });
+        dispatch({ type: 'SET_INITIALIZED' });
+        return;
+      }
+
       const storedUserId = userApiModule.getStoredUserId();
       if (storedUserId) {
         dispatch({ type: 'SET_LOADING', payload: true });
         try {
           const user = await userApiModule.getCurrentUser();
-          dispatch({ type: 'SET_USER', payload: user });
+          if (user) {
+            dispatch({ type: 'SET_USER', payload: user });
+            dispatch({ type: 'SET_INITIALIZED' });
+            return;
+          }
         } catch {
           userApiModule.setStoredUserId(null);
           dispatch({ type: 'SET_USER', payload: null });
         }
       }
+
       dispatch({ type: 'SET_INITIALIZED' });
     };
     checkAuth();
@@ -172,6 +188,10 @@ export function UserProvider({ children }: UserProviderProps) {
 
   const logout = useCallback(async (): Promise<void> => {
     await userApiModule.logout();
+    if (process.env.NODE_ENV !== 'test') {
+      dispatch({ type: 'SET_USER', payload: userApiModule.getAuthBypassUser() });
+      return;
+    }
     dispatch({ type: 'SET_USER', payload: null });
   }, []);
 

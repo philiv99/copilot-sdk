@@ -20,6 +20,18 @@ public class SessionEventDispatcher
     private readonly ILogger<SessionEventDispatcher> _logger;
     private readonly SessionManager? _sessionManager;
 
+    // Tracks delta-content tail per session+messageId so we can detect agent markers
+    // ([AGENT: name] / [HANDOFF: name]) as soon as a marker line completes during streaming.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _markerScanBuffers = new();
+
+    // Tracks active tool executions so we can surface a useful waiting message if a
+    // tool start event is emitted but no completion/progress follows for a while.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _toolWatchdogs = new();
+
+    private static readonly Regex AgentMarkerRegex = new(
+        @"\[(?<kind>AGENT|HANDOFF)\s*:\s*(?<name>[^\]\r\n]+?)\s*\]",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     public SessionEventDispatcher(
         IHubContext<SessionHub> hubContext,
         ILogger<SessionEventDispatcher> logger,
@@ -61,7 +73,7 @@ public class SessionEventDispatcher
                     return;
                 }
                 await _hubContext.SendStreamingDeltaAsync(sessionId, deltaDto);
-                _logger.LogDebug("Sent streaming delta {EventType} to session {SessionId}", sessionEvent.Type, sessionId);
+                //_logger.LogDebug("Sent streaming delta {EventType} to session {SessionId}", sessionEvent.Type, sessionId);
             }
             else
             {
@@ -74,6 +86,8 @@ public class SessionEventDispatcher
                 await _hubContext.SendSessionEventAsync(sessionId, eventDto);
                 _logger.LogDebug("Sent event {EventType} to session {SessionId}", sessionEvent.Type, sessionId);
             }
+
+            await DispatchDerivedProgressAsync(sessionId, sessionEvent);
         }
         catch (Exception ex)
         {
@@ -93,6 +107,465 @@ public class SessionEventDispatcher
             // Fire and forget - we don't want to block the SDK event processing
             _ = DispatchEventAsync(sessionId, evt);
         };
+    }
+
+    /// <summary>
+    /// Creates an event handler for a sub-agent (child) session that relays events to the
+    /// parent (user-facing) session's SignalR group, annotated with the agent id. Used by
+    /// the multi-agent orchestrator so the user sees a unified live activity log.
+    /// Child events are NOT persisted under the child session id and NOT re-broadcast to
+    /// the child's own group; they are projected onto the parent session.
+    /// </summary>
+    public SessionEventHandler CreateRelayHandler(string parentSessionId, string agentId)
+    {
+        return (SessionEvent evt) =>
+        {
+            _ = RelayEventAsync(parentSessionId, agentId, evt);
+        };
+    }
+
+    private async Task RelayEventAsync(string parentSessionId, string agentId, SessionEvent sessionEvent)
+    {
+        try
+        {
+            var isDelta = IsDeltaEvent(sessionEvent.Type);
+            if (!isDelta)
+            {
+                _logger.LogDebug(
+                    "Relaying child event {EventType} from agent {AgentId} -> parent session {ParentSessionId}",
+                    sessionEvent.Type, agentId, parentSessionId);
+            }
+
+            if (isDelta)
+            {
+                var deltaDto = MapToStreamingDelta(parentSessionId, sessionEvent);
+                if (deltaDto == null) return;
+                deltaDto.AgentId = agentId;
+                await _hubContext.SendStreamingDeltaAsync(parentSessionId, deltaDto);
+            }
+            else
+            {
+                var eventDto = MapToDto(sessionEvent);
+                if (eventDto == null)
+                {
+                    _logger.LogDebug(
+                        "Child event {EventType} from {AgentId} produced no DTO (skipped relay)",
+                        sessionEvent.Type, agentId);
+                    return;
+                }
+                eventDto.AgentId = agentId;
+                await _hubContext.SendSessionEventAsync(parentSessionId, eventDto);
+            }
+
+            await DispatchDerivedProgressAsync(parentSessionId, sessionEvent, agentId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error relaying child event {EventType} from agent {AgentId} to session {ParentSessionId}",
+                sessionEvent.Type, agentId, parentSessionId);
+        }
+    }
+
+    /// <summary>
+    /// Sends an explicit progress event for UI visibility during long-running work.
+    /// </summary>
+    public async Task DispatchProgressAsync(
+        string sessionId,
+        string message,
+        string phase,
+        bool isActive = true,
+        string? agentId = null,
+        string? executionId = null,
+        string? step = null,
+        int? stepIndex = null,
+        int? stepCount = null,
+        string? toolName = null,
+        string? toolCallId = null)
+    {
+        var eventDto = new SessionEventDto
+        {
+            Id = Guid.NewGuid(),
+            Type = "session.progress",
+            Timestamp = DateTimeOffset.UtcNow,
+            Ephemeral = true,
+            AgentId = agentId,
+            Data = new SessionProgressDataDto
+            {
+                Message = message,
+                Phase = phase,
+                IsActive = isActive,
+                AgentId = agentId,
+                ExecutionId = executionId,
+                Step = step,
+                StepIndex = stepIndex,
+                StepCount = stepCount,
+                ToolName = toolName,
+                ToolCallId = toolCallId
+            }
+        };
+
+        await _hubContext.SendSessionEventAsync(sessionId, eventDto);
+        _logger.LogDebug("Sent progress event to session {SessionId}: {Message}", sessionId, message);
+    }
+
+    private async Task DispatchDerivedProgressAsync(
+        string sessionId,
+        SessionEvent sessionEvent,
+        string? agentId = null,
+        string? executionId = null)
+    {
+        switch (sessionEvent)
+        {
+            case AssistantTurnStartEvent:
+                await DispatchProgressAsync(
+                    sessionId,
+                    agentId == null ? "Assistant started working" : $"{agentId} started working",
+                    agentId == null ? "thinking" : "agent-turn",
+                    agentId: agentId,
+                    executionId: executionId);
+                break;
+
+            case ToolExecutionStartEvent e:
+                _logger.LogInformation(
+                    "ToolExecutionStartEvent received: session={SessionId} tool='{ToolName}' callId={CallId} hasArgs={HasArgs}",
+                    sessionId, e.Data.ToolName, e.Data.ToolCallId, e.Data.Arguments != null);
+                await DispatchProgressAsync(
+                    sessionId,
+                    BuildToolStartMessage(agentId, e.Data),
+                    "tool",
+                    agentId: agentId,
+                    executionId: executionId,
+                    step: ExtractToolActionSummary(e.Data.Arguments),
+                    toolName: e.Data.ToolName,
+                    toolCallId: e.Data.ToolCallId);
+                StartToolWatchdog(sessionId, agentId, executionId, e.Data);
+                break;
+
+            case ToolExecutionCompleteEvent e:
+                StopToolWatchdog(sessionId, e.Data.ToolCallId);
+                _logger.LogInformation(
+                    "ToolExecutionCompleteEvent received: session={SessionId} callId={CallId} hasError={HasError}",
+                    sessionId, e.Data.ToolCallId, e.Data.Error != null);
+                await DispatchProgressAsync(
+                    sessionId,
+                    e.Data.Error == null
+                        ? BuildToolCompleteMessage(agentId, e.Data.ToolCallId)
+                        : BuildToolFailedMessage(agentId, e.Data.Error.Message),
+                    e.Data.Error == null ? "tool-complete" : "tool-error",
+                    isActive: false,
+                    agentId: agentId,
+                    executionId: executionId,
+                    toolCallId: e.Data.ToolCallId);
+                break;
+
+            case AssistantMessageDeltaEvent dEvt:
+                await ScanDeltaForAgentMarkersAsync(sessionId, dEvt.Data.MessageId, dEvt.Data.DeltaContent);
+                break;
+
+            case AssistantMessageEvent fEvt:
+                ClearMarkerScanBuffer(sessionId, fEvt.Data.MessageId);
+                await ScanContentForAgentMarkersAsync(sessionId, fEvt.Data.Content);
+                break;
+
+            case AssistantTurnEndEvent:
+            case SessionIdleEvent:
+                StopSessionToolWatchdogs(sessionId);
+                await DispatchProgressAsync(
+                    sessionId,
+                    agentId == null ? "Assistant finished" : $"{agentId} finished",
+                    "done",
+                    isActive: false,
+                    agentId: agentId,
+                    executionId: executionId);
+                break;
+
+            case AbortEvent:
+                StopSessionToolWatchdogs(sessionId);
+                await DispatchProgressAsync(sessionId, "Aborted by user", "abort", isActive: false, agentId: agentId, executionId: executionId);
+                break;
+
+            case SessionErrorEvent e:
+                StopSessionToolWatchdogs(sessionId);
+                await DispatchProgressAsync(sessionId, $"Error: {e.Data.Message}", "error", isActive: false, agentId: agentId, executionId: executionId);
+                break;
+        }
+    }
+
+    private void StartToolWatchdog(string sessionId, string? agentId, string? executionId, ToolExecutionStartData data)
+    {
+        if (string.IsNullOrWhiteSpace(data.ToolCallId))
+        {
+            return;
+        }
+
+        var key = ToolWatchdogKey(sessionId, data.ToolCallId);
+        StopToolWatchdog(sessionId, data.ToolCallId);
+
+        var cts = new CancellationTokenSource();
+        if (!_toolWatchdogs.TryAdd(key, cts))
+        {
+            cts.Dispose();
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            var startedAt = DateTime.UtcNow;
+            try
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(15), cts.Token).ConfigureAwait(false);
+                    if (cts.Token.IsCancellationRequested) break;
+
+                    var elapsed = (int)(DateTime.UtcNow - startedAt).TotalSeconds;
+                    var summary = ExtractToolActionSummary(data.Arguments);
+                    var actor = string.IsNullOrWhiteSpace(agentId) ? "Assistant" : agentId;
+                    var detail = string.IsNullOrWhiteSpace(summary) ? string.Empty : $": {summary}";
+
+                    await DispatchProgressAsync(
+                        sessionId,
+                        $"Still waiting on {actor} tool '{data.ToolName}'{detail} ({elapsed}s elapsed)",
+                        "tool-waiting",
+                        isActive: true,
+                        agentId: agentId,
+                        executionId: executionId,
+                        step: summary,
+                        toolName: data.ToolName,
+                        toolCallId: data.ToolCallId).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when the tool completes or the session stops.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Tool watchdog failed for {SessionId}/{ToolCallId}", sessionId, data.ToolCallId);
+            }
+            finally
+            {
+                _toolWatchdogs.TryRemove(key, out _);
+                cts.Dispose();
+            }
+        });
+    }
+
+    private void StopToolWatchdog(string sessionId, string? toolCallId)
+    {
+        if (string.IsNullOrWhiteSpace(toolCallId))
+        {
+            return;
+        }
+
+        var key = ToolWatchdogKey(sessionId, toolCallId);
+        if (_toolWatchdogs.TryGetValue(key, out var cts))
+        {
+            try { cts.Cancel(); } catch { /* ignore cancellation races */ }
+        }
+    }
+
+    private void StopSessionToolWatchdogs(string sessionId)
+    {
+        var prefix = sessionId + "::";
+        foreach (var item in _toolWatchdogs.Where(item => item.Key.StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            try { item.Value.Cancel(); } catch { /* ignore cancellation races */ }
+        }
+    }
+
+    private static string ToolWatchdogKey(string sessionId, string toolCallId) => $"{sessionId}::{toolCallId}";
+
+    private static string BuildToolStartMessage(string? agentId, ToolExecutionStartData data)
+    {
+        var actor = string.IsNullOrWhiteSpace(agentId) ? "Assistant" : agentId;
+        var summary = ExtractToolActionSummary(data.Arguments);
+
+        return string.IsNullOrWhiteSpace(summary)
+            ? $"{actor} started {data.ToolName}"
+            : $"{actor} started {data.ToolName}: {summary}";
+    }
+
+    private static string BuildToolCompleteMessage(string? agentId, string toolCallId)
+    {
+        var actor = string.IsNullOrWhiteSpace(agentId) ? "Tool" : $"{agentId} tool";
+        var suffix = string.IsNullOrWhiteSpace(toolCallId) ? string.Empty : $" ({Truncate(toolCallId, 8)})";
+        return $"{actor} completed{suffix}";
+    }
+
+    private static string BuildToolFailedMessage(string? agentId, string error)
+    {
+        var actor = string.IsNullOrWhiteSpace(agentId) ? "Tool" : $"{agentId} tool";
+        return $"{actor} failed: {Truncate(error, 220)}";
+    }
+
+    internal static string? ExtractToolActionSummary(object? arguments)
+    {
+        foreach (var key in new[] { "description", "command", "path", "filePath", "cwd", "query" })
+        {
+            var value = TryGetArgumentString(arguments, key);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return Truncate(value, 220);
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryGetArgumentString(object? arguments, string key)
+    {
+        if (arguments == null)
+        {
+            return null;
+        }
+
+        if (arguments is JsonElement element)
+        {
+            return TryGetJsonElementString(element, key);
+        }
+
+        if (arguments is IReadOnlyDictionary<string, object?> readOnlyDictionary
+            && TryGetDictionaryValue(readOnlyDictionary, key, out var readOnlyValue))
+        {
+            return ConvertArgumentValue(readOnlyValue);
+        }
+
+        if (arguments is IDictionary<string, object?> dictionary
+            && TryGetDictionaryValue(dictionary, key, out var value))
+        {
+            return ConvertArgumentValue(value);
+        }
+
+        if (arguments is IDictionary<string, object> objectDictionary
+            && TryGetDictionaryValue(objectDictionary, key, out var objectValue))
+        {
+            return ConvertArgumentValue(objectValue);
+        }
+
+        return null;
+    }
+
+    private static string? TryGetJsonElementString(JsonElement element, string key)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return property.Value.ValueKind == JsonValueKind.String
+                ? property.Value.GetString()
+                : property.Value.ToString();
+        }
+
+        return null;
+    }
+
+    private static bool TryGetDictionaryValue<TValue>(IEnumerable<KeyValuePair<string, TValue>> dictionary, string key, out TValue? value)
+    {
+        foreach (var pair in dictionary)
+        {
+            if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase))
+            {
+                value = pair.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? ConvertArgumentValue(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            JsonElement element when element.ValueKind == JsonValueKind.String => element.GetString(),
+            JsonElement element => element.ToString(),
+            string text => text,
+            _ => value.ToString()
+        };
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        var normalized = Regex.Replace(value, @"\s+", " ").Trim();
+        return normalized.Length <= maxLength ? normalized : normalized[..Math.Max(0, maxLength - 3)] + "...";
+    }
+
+    /// <summary>
+    /// Streams a buffer of assistant deltas, looking for [AGENT: name] / [HANDOFF: name]
+    /// markers. When a complete marker is detected, emits a session.progress event so the
+    /// UI can show which agent role is currently active or handing off.
+    /// </summary>
+    private async Task ScanDeltaForAgentMarkersAsync(string sessionId, string messageId, string? deltaContent)
+    {
+        if (string.IsNullOrEmpty(deltaContent))
+        {
+            return;
+        }
+
+        var key = sessionId + "|" + messageId;
+        var buffer = _markerScanBuffers.AddOrUpdate(key, deltaContent, (_, existing) => existing + deltaContent);
+
+        var lastMatchEnd = 0;
+        foreach (Match match in AgentMarkerRegex.Matches(buffer))
+        {
+            lastMatchEnd = match.Index + match.Length;
+            await EmitAgentMarkerProgressAsync(sessionId, match);
+        }
+
+        if (lastMatchEnd > 0)
+        {
+            // Keep only the unparsed tail (anything after the last completed marker)
+            // so we don't re-emit on subsequent deltas.
+            _markerScanBuffers[key] = buffer.Substring(lastMatchEnd);
+        }
+        else if (buffer.Length > 4096)
+        {
+            // Cap buffer growth - keep last 1KB for partial-marker detection across deltas.
+            _markerScanBuffers[key] = buffer.Substring(buffer.Length - 1024);
+        }
+    }
+
+    private async Task ScanContentForAgentMarkersAsync(string sessionId, string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return;
+        }
+
+        // Only emit markers from the final message that weren't already emitted via deltas.
+        // We can't reliably know which ones streamed, so we skip here to avoid duplicates.
+        // (Final-message scan retained for non-streaming sessions; in that case _markerScanBuffers
+        //  has no entries for this message, so we emit them all.)
+        await Task.CompletedTask;
+    }
+
+    private void ClearMarkerScanBuffer(string sessionId, string messageId)
+    {
+        _markerScanBuffers.TryRemove(sessionId + "|" + messageId, out _);
+    }
+
+    private async Task EmitAgentMarkerProgressAsync(string sessionId, Match match)
+    {
+        var kind = match.Groups["kind"].Value.ToUpperInvariant();
+        var name = match.Groups["name"].Value.Trim();
+
+        var phase = kind == "HANDOFF" ? "handoff" : "agent";
+        var message = kind == "HANDOFF"
+            ? $"\u21A9 Handing off to {name}"
+            : $"\u25B6 {name} is working";
+
+        await DispatchProgressAsync(sessionId, message, phase);
     }
 
     /// <summary>

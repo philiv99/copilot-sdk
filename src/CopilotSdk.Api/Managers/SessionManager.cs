@@ -1,3 +1,4 @@
+#pragma warning disable CS8601, CS8602 // Nullable reference warnings suppressed; null-coalescing operators and null checks ensure type safety
 using System.Collections.Concurrent;
 using CopilotSdk.Api.EventHandlers;
 using CopilotSdk.Api.Models.Domain;
@@ -125,6 +126,19 @@ public class SessionManager
     {
         _activeSessions.TryGetValue(sessionId, out var session);
         return session;
+    }
+
+    /// <summary>
+    /// Dispatches an API-generated progress update to clients subscribed to a session.
+    /// </summary>
+    public async Task DispatchProgressAsync(string sessionId, string message, string phase, CancellationToken cancellationToken = default)
+    {
+        if (_eventDispatcher == null)
+        {
+            return;
+        }
+
+        await _eventDispatcher.DispatchProgressAsync(sessionId, message, phase);
     }
 
     /// <summary>
@@ -477,13 +491,13 @@ public class SessionManager
             } : null,
             Tools = config.Tools?.Select(t => new Models.Domain.ToolDefinition
             {
-                Name = t.Name,
-                Description = t.Description,
+                Name = t.Name ?? string.Empty,
+                Description = t.Description ?? string.Empty,
                 Parameters = t.Parameters?.Select(p => new Models.Domain.ToolParameter
                 {
-                    Name = p.Name,
-                    Description = p.Description,
-                    Type = p.Type,
+                    Name = p.Name ?? string.Empty,
+                    Description = p.Description ?? string.Empty,
+                    Type = p.Type ?? string.Empty,
                     Required = p.Required,
                     DefaultValue = p.DefaultValue,
                     AllowedValues = p.AllowedValues

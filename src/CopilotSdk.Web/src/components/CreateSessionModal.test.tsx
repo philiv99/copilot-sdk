@@ -98,7 +98,7 @@ describe('CreateSessionModal', () => {
       
       await waitFor(() => {
         expect(mockCreateSession).toHaveBeenCalledWith({
-          model: 'gpt-4o',
+          model: 'claude-sonnet-4',
           streaming: true,
         });
       });
@@ -214,13 +214,13 @@ describe('CreateSessionModal', () => {
       render(<CreateSessionModal {...defaultProps} />);
       
       const select = screen.getByTestId('model-select');
-      fireEvent.change(select, { target: { value: 'gpt-4o-mini' } });
+      fireEvent.change(select, { target: { value: 'claude-sonnet-4' } });
       fireEvent.click(screen.getByTestId('create-session-submit'));
       
       await waitFor(() => {
         expect(mockCreateSession).toHaveBeenCalledWith(
           expect.objectContaining({
-            model: 'gpt-4o-mini',
+            model: 'claude-sonnet-4',
           })
         );
       });
@@ -356,7 +356,7 @@ describe('CreateSessionModal', () => {
       
       await waitFor(() => {
         expect(mockCreateSession).toHaveBeenCalledWith({
-          model: 'gpt-4o',
+          model: 'claude-sonnet-4',
           streaming: true,
         });
       });
